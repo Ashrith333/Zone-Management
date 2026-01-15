@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zone Management Tool - Accompany Health</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-map-marked-alt"></i>
+                    <h1>Zone Management</h1>
+                </div>
+                <div class="user-info">
+                    <i class="fas fa-user-circle"></i>
+                    <span>Clinical Operations Manager</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="nav-tabs" style="display: none;">
+            <!-- Navigation removed - all functionality in Overview -->
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard View -->
+            <div id="dashboard-view" class="view active">
+                <div class="view-header">
+                    <h2><i class="fas fa-chart-line"></i> Zone Overview</h2>
+                    <button class="btn btn-primary" onclick="showCreateZoneModal()">
+                        <i class="fas fa-plus"></i> Create Zone
+                    </button>
+                </div>
+
+                <div class="dashboard-stats">
+                    <div class="stat-card">
+                        <div class="stat-icon blue">
+                            <i class="fas fa-layer-group"></i>
+                        </div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="total-zones">0</div>
+                            <div class="stat-label">Total Zones</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon green">
+                            <i class="fas fa-user-md"></i>
+                        </div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="total-providers">0</div>
+                            <div class="stat-label">Active Providers</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon orange">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="total-patients">0</div>
+                            <div class="stat-label">Total Patients</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon red">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="coverage-gaps">0</div>
+                            <div class="stat-label">Coverage Gaps</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Zone Name</th>
+                                <th>ZIP Codes</th>
+                                <th>Patients</th>
+                                <th>Providers</th>
+                                <th>Ratio</th>
+                                <th>Coverage Gaps</th>
+                                <th>Multi-Zone Patients</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashboard-table-body">
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Zone Detail View (hidden by default) -->
+            <div id="zone-detail-view" class="view">
+                <div class="view-header">
+                    <button class="btn btn-secondary" onclick="showOverview()">
+                        <i class="fas fa-arrow-left"></i> Back to Overview
+                    </button>
+                    <h2 id="zone-detail-name"></h2>
+                    <div class="zone-detail-actions">
+                        <button class="btn btn-secondary" onclick="editZone()">
+                            <i class="fas fa-edit"></i> Edit Zone
+                        </button>
+                        <button class="btn btn-danger" onclick="deleteZone()">
+                            <i class="fas fa-trash"></i> Delete Zone
+                        </button>
+                    </div>
+                </div>
+
+                <div class="zone-detail-tabs">
+                    <button class="detail-tab active" data-tab="providers">
+                        <i class="fas fa-user-md"></i> Providers Assigned
+                    </button>
+                    <button class="detail-tab" data-tab="timeline">
+                        <i class="fas fa-calendar-alt"></i> Coverage Timeline
+                    </button>
+                    <button class="detail-tab" data-tab="patients">
+                        <i class="fas fa-users"></i> Patients
+                    </button>
+                </div>
+
+                <div class="zone-detail-content">
+                    <!-- Providers Tab -->
+                    <div id="providers-tab" class="detail-tab-content active">
+                        <div class="tab-header">
+                            <h3>Provider Assignments</h3>
+                            <button class="btn btn-primary" onclick="showAddProviderModal()">
+                                <i class="fas fa-plus"></i> Add Provider
+                            </button>
+                        </div>
+                        <div id="providers-list" class="providers-list">
+                            <!-- Populated by JavaScript -->
+                        </div>
+                    </div>
+
+                    <!-- Timeline Tab -->
+                    <div id="timeline-tab" class="detail-tab-content">
+                        <div class="timeline-controls">
+                            <label>View Range:</label>
+                            <select id="timeline-range" onchange="updateTimeline()">
+                                <option value="30">30 Days</option>
+                                <option value="60">60 Days</option>
+                                <option value="90" selected>90 Days</option>
+                                <option value="custom">Custom Range</option>
+                            </select>
+                            <div id="custom-range-inputs" class="custom-range-inputs" style="display: none;">
+                                <input type="date" id="custom-start-date">
+                                <input type="date" id="custom-end-date">
+                                <button class="btn btn-primary" onclick="applyCustomRange()">Apply</button>
+                            </div>
+                        </div>
+                        <div id="timeline-container" class="timeline-container">
+                            <!-- Populated by JavaScript -->
+                        </div>
+                    </div>
+
+                    <!-- Patients Tab -->
+                    <div id="patients-tab" class="detail-tab-content">
+                        <div class="tab-header">
+                            <h3>Patients in Zone</h3>
+                            <div class="search-box">
+                                <i class="fas fa-search"></i>
+                                <input type="text" id="patient-search" placeholder="Search by name or ZIP code..." oninput="filterPatients()">
+                            </div>
+                        </div>
+                        <div id="patients-list" class="patients-list">
+                            <!-- Populated by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <!-- Create/Edit Zone Modal -->
+    <div id="zone-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="zone-modal-title">Create Zone</h3>
+                <button class="modal-close" onclick="closeModal('zone-modal')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="zone-form">
+                    <div class="form-group">
+                        <label>Zone Name <span class="required">*</span></label>
+                        <input type="text" id="zone-name" placeholder="e.g., North Seattle" required>
+                        <div class="error-message" id="zone-name-error"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>ZIP Codes <span class="required">*</span></label>
+                        <div class="zip-code-selector">
+                            <input type="text" id="zip-search" placeholder="Search or type ZIP code..." oninput="searchZipCodes()">
+                            <div id="zip-dropdown" class="zip-dropdown"></div>
+                            <div id="selected-zips" class="selected-zips"></div>
+                        </div>
+                        <div class="error-message" id="zip-codes-error"></div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('zone-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveZone()">
+                    <i class="fas fa-save"></i> Save Zone
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Provider Modal -->
+    <div id="provider-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Provider to Zone</h3>
+                <button class="modal-close" onclick="closeModal('provider-modal')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="provider-form">
+                    <div class="form-group">
+                        <label>Select Provider(s) <span class="required">*</span></label>
+                        <div class="provider-selector">
+                            <input type="text" id="provider-search" placeholder="Search providers..." oninput="searchProviders()">
+                            <div id="provider-dropdown" class="provider-dropdown"></div>
+                            <div id="selected-providers" class="selected-providers"></div>
+                        </div>
+                        <div class="error-message" id="provider-error"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>Start Date <span class="required">*</span></label>
+                        <input type="date" id="provider-start-date" required>
+                        <div class="error-message" id="start-date-error"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>End Date <span class="required">*</span></label>
+                        <input type="date" id="provider-end-date" required>
+                        <div class="error-message" id="end-date-error"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>Active Days <span class="required">*</span></label>
+                        <div class="days-selector">
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="monday"> Monday
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="tuesday"> Tuesday
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="wednesday"> Wednesday
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="thursday"> Thursday
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="friday"> Friday
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="saturday"> Saturday
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="sunday"> Sunday
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="bi-weekly"> Bi-weekly (every other week)
+                            </label>
+                        </div>
+                        <div class="error-message" id="days-error"></div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('provider-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveProviderAssignment()">
+                    <i class="fas fa-save"></i> Save Assignment
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Provider Assignment Modal -->
+    <div id="edit-provider-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Edit Provider Assignment</h3>
+                <button class="modal-close" onclick="closeModal('edit-provider-modal')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-provider-form">
+                    <div class="form-group">
+                        <label>Provider</label>
+                        <input type="text" id="edit-provider-name" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label>Start Date <span class="required">*</span></label>
+                        <input type="date" id="edit-provider-start-date" required>
+                        <div class="error-message" id="edit-start-date-error"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>End Date <span class="required">*</span></label>
+                        <input type="date" id="edit-provider-end-date" required>
+                        <div class="error-message" id="edit-end-date-error"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>Active Days <span class="required">*</span></label>
+                        <div class="days-selector">
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="monday" id="edit-monday"> Monday
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="tuesday" id="edit-tuesday"> Tuesday
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="wednesday" id="edit-wednesday"> Wednesday
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="thursday" id="edit-thursday"> Thursday
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="friday" id="edit-friday"> Friday
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="saturday" id="edit-saturday"> Saturday
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="sunday" id="edit-sunday"> Sunday
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="edit-bi-weekly"> Bi-weekly (every other week)
+                            </label>
+                        </div>
+                        <div class="error-message" id="edit-days-error"></div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('edit-provider-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="updateProviderAssignment()">
+                    <i class="fas fa-save"></i> Update Assignment
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Warning/Confirmation Modal -->
+    <div id="warning-modal" class="modal">
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h3 id="warning-title">
+                    <i class="fas fa-exclamation-triangle"></i> Warning
+                </h3>
+                <button class="modal-close" onclick="closeModal('warning-modal')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="warning-message"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('warning-modal')">Cancel</button>
+                <button class="btn btn-danger" id="warning-confirm-btn" onclick="confirmWarning()">
+                    Continue
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="data.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
