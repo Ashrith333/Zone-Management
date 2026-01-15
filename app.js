@@ -353,13 +353,16 @@ function renderTimelineTab() {
     
     let startDate, endDate;
     const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize to midnight for consistent comparison
     
     if (range === 'custom') {
         const customStart = document.getElementById('custom-start-date').value;
         const customEnd = document.getElementById('custom-end-date').value;
         if (customStart && customEnd) {
             startDate = new Date(customStart);
+            startDate.setHours(0, 0, 0, 0);
             endDate = new Date(customEnd);
+            endDate.setHours(0, 0, 0, 0);
         } else {
             startDate = new Date(today);
             endDate = new Date(today);
@@ -380,10 +383,19 @@ function renderTimelineTab() {
     container.innerHTML = `
         <div class="timeline-header">
             <div class="timeline-date-range">
-                ${formatDate(startDate.toISOString().split('T')[0])} - ${formatDate(endDate.toISOString().split('T')[0])}
+                <i class="fas fa-calendar-alt"></i> ${formatDate(startDate.toISOString().split('T')[0])} - ${formatDate(endDate.toISOString().split('T')[0])}
+            </div>
+            <div class="timeline-legend">
+                <span class="legend-item">
+                    <span class="legend-color" style="background: #3b82f6;"></span> Provider Coverage
+                </span>
+                <span class="legend-item">
+                    <span class="legend-color" style="background: #fee2e2; border: 2px dashed #dc2626;"></span> Coverage Gap
+                </span>
             </div>
         </div>
         <div class="timeline-grid" id="timeline-grid">
+            ${renderDateMarkers(startDate, endDate, dayWidth, today)}
             ${renderTimelineBars(assignments, startDate, endDate, dayWidth)}
             ${renderTimelineGaps(gaps, startDate, endDate, dayWidth)}
             ${renderTodayIndicator(today, startDate, endDate, dayWidth)}
@@ -406,18 +418,30 @@ function renderTimelineBars(assignments, startDate, endDate, dayWidth) {
     const barHeight = 40;
     const spacing = 10;
     
+    // Normalize start and end dates
+    const startNormalized = new Date(startDate);
+    startNormalized.setHours(0, 0, 0, 0);
+    const endNormalized = new Date(endDate);
+    endNormalized.setHours(0, 0, 0, 0);
+    const totalDays = (endNormalized - startNormalized) / (1000 * 60 * 60 * 24);
+    
     assignments.forEach((assignment, index) => {
         const assignmentStart = new Date(assignment.startDate);
+        assignmentStart.setHours(0, 0, 0, 0);
         const assignmentEnd = new Date(assignment.endDate);
+        assignmentEnd.setHours(0, 0, 0, 0);
         
         // Only show if overlaps with view range
-        if (assignmentEnd < startDate || assignmentStart > endDate) return;
+        if (assignmentEnd < startNormalized || assignmentStart > endNormalized) return;
         
-        const displayStart = assignmentStart < startDate ? startDate : assignmentStart;
-        const displayEnd = assignmentEnd > endDate ? endDate : assignmentEnd;
+        const displayStart = assignmentStart < startNormalized ? startNormalized : assignmentStart;
+        const displayEnd = assignmentEnd > endNormalized ? endNormalized : assignmentEnd;
         
-        const left = ((displayStart - startDate) / (1000 * 60 * 60 * 24)) * dayWidth;
-        const width = ((displayEnd - displayStart) / (1000 * 60 * 60 * 24)) * dayWidth;
+        const daysFromStart = (displayStart - startNormalized) / (1000 * 60 * 60 * 24);
+        const daysDuration = (displayEnd - displayStart) / (1000 * 60 * 60 * 24);
+        
+        const left = (daysFromStart / totalDays) * 100;
+        const width = (daysDuration / totalDays) * 100;
         
         const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'];
         const color = colors[index % colors.length];
@@ -439,39 +463,108 @@ function renderTimelineBars(assignments, startDate, endDate, dayWidth) {
 
 function renderTimelineGaps(gaps, startDate, endDate, dayWidth) {
     let html = '';
-    let yOffset = 0;
     const barHeight = 40;
+    const spacing = 10;
+    let yOffset = barHeight + spacing; // Start below first potential bar
     
-    gaps.forEach(gap => {
-        const gapStart = gap.start < startDate ? startDate : gap.start;
-        const gapEnd = gap.end > endDate ? endDate : gap.end;
+    // Normalize dates
+    const startNormalized = new Date(startDate);
+    startNormalized.setHours(0, 0, 0, 0);
+    const endNormalized = new Date(endDate);
+    endNormalized.setHours(0, 0, 0, 0);
+    const totalDays = (endNormalized - startNormalized) / (1000 * 60 * 60 * 24);
+    
+    gaps.forEach((gap, index) => {
+        const gapStart = new Date(gap.start);
+        gapStart.setHours(0, 0, 0, 0);
+        const gapEnd = new Date(gap.end);
+        gapEnd.setHours(0, 0, 0, 0);
         
-        const left = ((gapStart - startDate) / (1000 * 60 * 60 * 24)) * dayWidth;
-        const width = ((gapEnd - gapStart) / (1000 * 60 * 60 * 24)) * dayWidth;
+        const displayStart = gapStart < startNormalized ? startNormalized : gapStart;
+        const displayEnd = gapEnd > endNormalized ? endNormalized : gapEnd;
+        
+        const daysFromStart = (displayStart - startNormalized) / (1000 * 60 * 60 * 24);
+        const daysDuration = (displayEnd - displayStart) / (1000 * 60 * 60 * 24);
+        
+        const left = (daysFromStart / totalDays) * 100;
+        const width = (daysDuration / totalDays) * 100;
+        
+        // Calculate gap duration
+        const gapDuration = Math.ceil((gapEnd - gapStart) / (1000 * 60 * 60 * 24));
+        const gapText = gapDuration === 1 ? '1 day' : `${gapDuration} days`;
         
         html += `
             <div class="timeline-gap" 
                  style="left: ${left}%; width: ${width}%; top: ${yOffset}px;"
                  onclick="handleGapClick('${gap.start.toISOString().split('T')[0]}', '${gap.end.toISOString().split('T')[0]}')"
-                 title="No coverage - ${gap.days} days">
-                No coverage - ${gap.days} days
+                 title="No coverage: ${formatDate(gapStart.toISOString().split('T')[0])} to ${formatDate(gapEnd.toISOString().split('T')[0])} (${gapText})">
+                <i class="fas fa-exclamation-triangle"></i> No coverage - ${gapText}
             </div>
         `;
         
-        yOffset += barHeight + 10;
+        yOffset += barHeight + spacing;
     });
     
     return html;
 }
 
-function renderTodayIndicator(today, startDate, endDate, dayWidth) {
-    if (today < startDate || today > endDate) return '';
+function renderDateMarkers(startDate, endDate, dayWidth, today) {
+    let html = '';
+    const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+    const markerInterval = Math.max(1, Math.floor(totalDays / 8)); // Show about 8 markers
     
-    const left = ((today - startDate) / (1000 * 60 * 60 * 24)) * dayWidth;
+    // Normalize dates for comparison
+    const todayNormalized = new Date(today);
+    todayNormalized.setHours(0, 0, 0, 0);
+    
+    for (let i = 0; i <= totalDays; i += markerInterval) {
+        const markerDate = new Date(startDate);
+        markerDate.setDate(markerDate.getDate() + i);
+        markerDate.setHours(0, 0, 0, 0);
+        if (markerDate > endDate) break;
+        
+        const left = (i / totalDays) * 100;
+        const isToday = markerDate.getTime() === todayNormalized.getTime();
+        
+        html += `
+            <div class="timeline-date-marker ${isToday ? 'today-marker' : ''}" style="left: ${left}%;">
+                <div class="marker-line"></div>
+                <div class="marker-label">${formatDate(markerDate.toISOString().split('T')[0])}</div>
+            </div>
+        `;
+    }
+    
+    return html;
+}
+
+function renderTodayIndicator(today, startDate, endDate, dayWidth) {
+    // Normalize dates for comparison
+    const todayNormalized = new Date(today);
+    todayNormalized.setHours(0, 0, 0, 0);
+    const startNormalized = new Date(startDate);
+    startNormalized.setHours(0, 0, 0, 0);
+    const endNormalized = new Date(endDate);
+    endNormalized.setHours(0, 0, 0, 0);
+    
+    if (todayNormalized < startNormalized || todayNormalized > endNormalized) return '';
+    
+    const daysDiff = (todayNormalized - startNormalized) / (1000 * 60 * 60 * 24);
+    const totalDays = (endNormalized - startNormalized) / (1000 * 60 * 60 * 24);
+    const left = (daysDiff / totalDays) * 100;
+    
+    // Adjust label position if near edges to prevent overflow
+    let labelStyle = 'left: 50%; transform: translateX(-50%);';
+    if (left < 10) {
+        labelStyle = 'left: 0; transform: translateX(0);';
+    } else if (left > 90) {
+        labelStyle = 'right: 0; left: auto; transform: translateX(0);';
+    }
     
     return `
-        <div class="today-indicator" style="left: ${left}%;">
-            <div class="today-label">Today</div>
+        <div class="today-indicator" style="left: ${left}%;" title="Today: ${formatDate(todayNormalized.toISOString().split('T')[0])}">
+            <div class="today-label" style="${labelStyle}">
+                <i class="fas fa-calendar-day"></i> Today (${formatDate(todayNormalized.toISOString().split('T')[0])})
+            </div>
         </div>
     `;
 }

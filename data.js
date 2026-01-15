@@ -53,7 +53,37 @@ const generatePatients = () => {
 
 const allPatients = generatePatients();
 
-// Initial zones with realistic data
+// Helper function to format date as YYYY-MM-DD
+function formatDateString(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+// Get current date and calculate future dates
+const today = new Date();
+today.setHours(0, 0, 0, 0);
+
+const tomorrow = new Date(today);
+tomorrow.setDate(tomorrow.getDate() + 1);
+
+const inOneWeek = new Date(today);
+inOneWeek.setDate(inOneWeek.getDate() + 7);
+
+const inTwoWeeks = new Date(today);
+inTwoWeeks.setDate(inTwoWeeks.getDate() + 14);
+
+const inOneMonth = new Date(today);
+inOneMonth.setMonth(inOneMonth.getMonth() + 1);
+
+const inTwoMonths = new Date(today);
+inTwoMonths.setMonth(inTwoMonths.getMonth() + 2);
+
+const inThreeMonths = new Date(today);
+inThreeMonths.setMonth(inThreeMonths.getMonth() + 3);
+
+// Initial zones with realistic data using current dates
 let zones = [
     {
         id: 1,
@@ -64,8 +94,8 @@ let zones = [
                 id: 1,
                 providerId: 1,
                 providerName: 'Dr. Sarah Kim',
-                startDate: '2024-01-01',
-                endDate: '2024-12-31',
+                startDate: formatDateString(today),
+                endDate: formatDateString(inOneMonth),
                 activeDays: ['monday', 'wednesday', 'friday'],
                 biWeekly: false
             },
@@ -73,15 +103,15 @@ let zones = [
                 id: 2,
                 providerId: 2,
                 providerName: 'Dr. Michael Chen',
-                startDate: '2024-01-01',
-                endDate: '2024-12-31',
+                startDate: formatDateString(inOneMonth),
+                endDate: formatDateString(inTwoMonths),
                 activeDays: ['tuesday', 'thursday'],
                 biWeekly: false
             }
         ],
         appointments: [
-            { id: 1, patientId: 1, date: '2024-12-15', providerId: 1 },
-            { id: 2, patientId: 2, date: '2024-12-20', providerId: 2 }
+            { id: 1, patientId: 1, date: formatDateString(inOneWeek), providerId: 1 },
+            { id: 2, patientId: 2, date: formatDateString(inTwoWeeks), providerId: 2 }
         ]
     },
     {
@@ -93,8 +123,8 @@ let zones = [
                 id: 3,
                 providerId: 3,
                 providerName: 'Dr. Emily Rodriguez',
-                startDate: '2024-01-01',
-                endDate: '2024-12-31',
+                startDate: formatDateString(today),
+                endDate: formatDateString(inTwoWeeks),
                 activeDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
                 biWeekly: false
             },
@@ -102,15 +132,15 @@ let zones = [
                 id: 4,
                 providerId: 4,
                 providerName: 'Dr. James Wilson',
-                startDate: '2024-06-01',
-                endDate: '2024-12-31',
+                startDate: formatDateString(inOneMonth),
+                endDate: formatDateString(inTwoMonths),
                 activeDays: ['monday', 'wednesday', 'friday'],
                 biWeekly: true
             }
         ],
         appointments: [
-            { id: 3, patientId: 5, date: '2024-12-18', providerId: 3 },
-            { id: 4, patientId: 6, date: '2024-12-22', providerId: 4 }
+            { id: 3, patientId: 5, date: formatDateString(inOneWeek), providerId: 3 },
+            { id: 4, patientId: 6, date: formatDateString(inTwoWeeks), providerId: 4 }
         ]
     },
     {
@@ -122,8 +152,8 @@ let zones = [
                 id: 5,
                 providerId: 5,
                 providerName: 'Dr. Lisa Anderson',
-                startDate: '2024-01-01',
-                endDate: '2024-11-30',
+                startDate: formatDateString(today),
+                endDate: formatDateString(inOneWeek),
                 activeDays: ['monday', 'wednesday', 'friday'],
                 biWeekly: false
             },
@@ -131,14 +161,14 @@ let zones = [
                 id: 6,
                 providerId: 6,
                 providerName: 'Dr. Robert Martinez',
-                startDate: '2024-12-01',
-                endDate: '2024-12-31',
+                startDate: formatDateString(inOneMonth),
+                endDate: formatDateString(inTwoMonths),
                 activeDays: ['monday', 'wednesday', 'friday'],
                 biWeekly: false
             }
         ],
         appointments: [
-            { id: 5, patientId: 10, date: '2024-12-19', providerId: 5 }
+            { id: 5, patientId: 10, date: formatDateString(inOneWeek), providerId: 5 }
         ]
     },
     {
@@ -150,8 +180,8 @@ let zones = [
                 id: 7,
                 providerId: 7,
                 providerName: 'Dr. Jennifer Taylor',
-                startDate: '2024-01-01',
-                endDate: '2024-08-15',
+                startDate: formatDateString(today),
+                endDate: formatDateString(inTwoWeeks),
                 activeDays: ['tuesday', 'thursday'],
                 biWeekly: false
             }
@@ -184,8 +214,10 @@ function getPatientsInMultipleZones() {
 
 function calculateCoverageGaps(zone, days = 90) {
     const today = new Date();
-    const endDate = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize to midnight
+    const endDate = new Date(today);
     endDate.setDate(today.getDate() + days);
+    endDate.setHours(0, 0, 0, 0);
     
     const gaps = [];
     const assignments = zone.providerAssignments || [];
@@ -195,9 +227,11 @@ function calculateCoverageGaps(zone, days = 90) {
     }
     
     // Sort assignments by start date
-    const sortedAssignments = [...assignments].sort((a, b) => 
-        new Date(a.startDate) - new Date(b.startDate)
-    );
+    const sortedAssignments = [...assignments].sort((a, b) => {
+        const dateA = new Date(a.startDate);
+        const dateB = new Date(b.startDate);
+        return dateA - dateB;
+    });
     
     // Check for gaps
     let currentDate = new Date(today);
@@ -205,12 +239,14 @@ function calculateCoverageGaps(zone, days = 90) {
     for (let i = 0; i < sortedAssignments.length; i++) {
         const assignment = sortedAssignments[i];
         const assignmentStart = new Date(assignment.startDate);
+        assignmentStart.setHours(0, 0, 0, 0);
         const assignmentEnd = new Date(assignment.endDate);
+        assignmentEnd.setHours(0, 0, 0, 0);
         
         // Check gap before this assignment
         if (assignmentStart > currentDate && currentDate < endDate) {
             const gapStart = new Date(currentDate);
-            const gapEnd = assignmentStart < endDate ? assignmentStart : endDate;
+            const gapEnd = assignmentStart < endDate ? new Date(assignmentStart) : new Date(endDate);
             const gapDays = Math.ceil((gapEnd - gapStart) / (1000 * 60 * 60 * 24));
             if (gapDays > 0) {
                 gaps.push({ start: gapStart, end: gapEnd, days: gapDays });
@@ -220,6 +256,7 @@ function calculateCoverageGaps(zone, days = 90) {
         // Update current date to end of this assignment if it extends further
         if (assignmentEnd > currentDate) {
             currentDate = new Date(assignmentEnd);
+            currentDate.setHours(0, 0, 0, 0);
         }
     }
     
@@ -227,7 +264,7 @@ function calculateCoverageGaps(zone, days = 90) {
     if (currentDate < endDate) {
         const gapDays = Math.ceil((endDate - currentDate) / (1000 * 60 * 60 * 24));
         if (gapDays > 0) {
-            gaps.push({ start: currentDate, end: endDate, days: gapDays });
+            gaps.push({ start: new Date(currentDate), end: new Date(endDate), days: gapDays });
         }
     }
     
