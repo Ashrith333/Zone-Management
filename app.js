@@ -160,6 +160,10 @@ function updateDashboardStats() {
 
 function renderDashboardTable() {
     const tbody = document.getElementById('dashboard-table-body');
+    if (!tbody) {
+        console.error('dashboard-table-body not found');
+        return;
+    }
     tbody.innerHTML = '';
     
     zones.forEach(zone => {

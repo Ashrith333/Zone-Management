@@ -94,6 +94,11 @@
                         </thead>
                         <tbody id="dashboard-table-body">
                             <!-- Populated by JavaScript -->
+                            <tr>
+                                <td colspan="8" style="text-align: center; padding: 2rem; color: #64748b;">
+                                    <i class="fas fa-spinner fa-spin"></i> Loading zones...
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -384,5 +389,20 @@
 
     <script src="data.js"></script>
     <script src="app.js"></script>
+    <script>
+        // Ensure dashboard view is visible on load
+        window.addEventListener('load', function() {
+            const dashboardView = document.getElementById('dashboard-view');
+            if (dashboardView) {
+                dashboardView.classList.add('active');
+            }
+            // Check if data loaded
+            if (typeof zones === 'undefined') {
+                console.error('Error: zones data not loaded. Check data.js file.');
+            } else {
+                console.log('Zone Management Tool loaded successfully. Zones:', zones.length);
+            }
+        });
+    </script>
 </body>
 </html>
