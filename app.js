@@ -83,6 +83,20 @@ function setupEventListeners() {
             });
         }
     });
+    
+    // Add event listeners for day checkboxes to update styles
+    document.addEventListener('change', (e) => {
+        if (e.target.classList.contains('day-input')) {
+            const checkbox = e.target.closest('.day-checkbox-modern');
+            if (checkbox) {
+                if (e.target.checked) {
+                    checkbox.classList.add('checked');
+                } else {
+                    checkbox.classList.remove('checked');
+                }
+            }
+        }
+    });
 }
 
 function showView(viewName) {
@@ -209,17 +223,54 @@ function renderDashboardTable() {
     });
     
     // Sort zones if needed
-    if (currentSortColumn === 'gapDays') {
+    if (currentSortColumn) {
         filteredZones.sort((a, b) => {
-            const gapsA = calculateCoverageGaps(a, gapDaysRange);
-            const gapsB = calculateCoverageGaps(b, gapDaysRange);
-            const daysA = gapsA.reduce((sum, gap) => sum + gap.days, 0);
-            const daysB = gapsB.reduce((sum, gap) => sum + gap.days, 0);
+            let valueA, valueB;
             
-            if (currentSortDirection === 'asc') {
-                return daysA - daysB;
-            } else {
-                return daysB - daysA;
+            switch (currentSortColumn) {
+                case 'zipCodes':
+                    valueA = a.zipCodes.length;
+                    valueB = b.zipCodes.length;
+                    return currentSortDirection === 'asc' 
+                        ? valueA - valueB
+                        : valueB - valueA;
+                
+                case 'patients':
+                    valueA = getPatientsInZone(a).length;
+                    valueB = getPatientsInZone(b).length;
+                    return currentSortDirection === 'asc' 
+                        ? valueA - valueB
+                        : valueB - valueA;
+                
+                case 'providers':
+                    valueA = a.providerAssignments?.length || 0;
+                    valueB = b.providerAssignments?.length || 0;
+                    return currentSortDirection === 'asc' 
+                        ? valueA - valueB
+                        : valueB - valueA;
+                
+                case 'ratio':
+                    const patientsA = getPatientsInZone(a).length;
+                    const patientsB = getPatientsInZone(b).length;
+                    const providersA = a.providerAssignments?.length || 0;
+                    const providersB = b.providerAssignments?.length || 0;
+                    valueA = providersA > 0 ? patientsA / providersA : 0;
+                    valueB = providersB > 0 ? patientsB / providersB : 0;
+                    return currentSortDirection === 'asc' 
+                        ? valueA - valueB
+                        : valueB - valueA;
+                
+                case 'gapDays':
+                    const gapsA = calculateCoverageGaps(a, gapDaysRange);
+                    const gapsB = calculateCoverageGaps(b, gapDaysRange);
+                    valueA = gapsA.reduce((sum, gap) => sum + gap.days, 0);
+                    valueB = gapsB.reduce((sum, gap) => sum + gap.days, 0);
+                    return currentSortDirection === 'asc' 
+                        ? valueA - valueB
+                        : valueB - valueA;
+                
+                default:
+                    return 0;
             }
         });
     }
@@ -229,7 +280,7 @@ function renderDashboardTable() {
     if (filteredZones.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="9" style="text-align: center; padding: 2rem; color: #64748b;">
+                <td colspan="7" style="text-align: center; padding: 2rem; color: #64748b;">
                     <i class="fas fa-search"></i> No zones found matching your filters.
                 </td>
             </tr>
@@ -243,7 +294,6 @@ function renderDashboardTable() {
         const ratio = providerCount > 0 ? Math.round(patients.length / providerCount) : 0;
         const gaps = calculateCoverageGaps(zone, gapDaysRange);
         const gapDays = gaps.reduce((sum, gap) => sum + gap.days, 0);
-        const multiZonePatients = getPatientsInMultipleZones();
         
         const row = document.createElement('tr');
         row.style.cursor = 'pointer';
@@ -255,7 +305,7 @@ function renderDashboardTable() {
         
         row.innerHTML = `
             <td><strong>${zone.name}</strong></td>
-            <td>${zone.zipCodes.length} ZIP codes</td>
+            <td>${zone.zipCodes.length}</td>
             <td>${patients.length}</td>
             <td>${providerCount}</td>
             <td>
@@ -265,18 +315,11 @@ function renderDashboardTable() {
                 }
             </td>
             <td>
-                ${gaps.length > 0 ? 
-                    `<span class="gap-badge">${gaps.length} gap(s)</span>` : 
-                    '<span class="no-gap">✓ No gaps</span>'
-                }
-            </td>
-            <td>
                 ${gapDays > 0 ? 
                     `<span class="gap-days-count">${gapDays} days</span>` : 
                     '<span class="no-gap">0 days</span>'
                 }
             </td>
-            <td>${multiZonePatients > 0 ? `<span class="gap-badge">${multiZonePatients}</span>` : '0'}</td>
             <td>
                 <div class="table-menu" style="position: relative;">
                     <button class="menu-btn" onclick="event.stopPropagation(); toggleTableMenu(${zone.id})" title="More options">
@@ -314,11 +357,12 @@ function sortTable(column) {
         currentSortDirection = 'asc';
     }
     
-    // Update sort icons
-    document.querySelectorAll('.sortable i').forEach(icon => {
+    // Update sort icons - reset all
+    document.querySelectorAll('.data-table th.sortable i').forEach(icon => {
         icon.className = 'fas fa-sort';
     });
     
+    // Set active sort icon
     const sortIcon = document.getElementById(`sort-icon-${column}`);
     if (sortIcon) {
         sortIcon.className = currentSortDirection === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down';
@@ -1387,23 +1431,80 @@ function deleteZoneById(zoneId) {
 
 // Provider Assignment
 function showAddProviderModal() {
-    editingProviderAssignmentId = null;
-    selectedProviders = [];
-    document.getElementById('provider-form').reset();
-    document.getElementById('selected-providers').innerHTML = '';
-    document.getElementById('provider-error').classList.remove('show');
-    document.getElementById('start-date-error').classList.remove('show');
-    document.getElementById('end-date-error').classList.remove('show');
-    document.getElementById('days-error').classList.remove('show');
-    
-    // Set default dates
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById('provider-start-date').value = today;
-    const endDate = new Date();
-    endDate.setFullYear(endDate.getFullYear() + 1);
-    document.getElementById('provider-end-date').value = endDate.toISOString().split('T')[0];
-    
-    document.getElementById('provider-modal').classList.add('show');
+    try {
+        editingProviderAssignmentId = null;
+        selectedProviders = [];
+        
+        const modal = document.getElementById('provider-modal');
+        if (!modal) {
+            console.error('Provider modal not found');
+            return;
+        }
+        
+        // Update modal title and button
+        const titleEl = document.getElementById('provider-modal-title');
+        const saveTextEl = document.getElementById('provider-modal-save-text');
+        if (titleEl) titleEl.textContent = 'Add Provider to Zone';
+        if (saveTextEl) saveTextEl.textContent = 'Save Assignment';
+        
+        // Show provider selector, hide provider name display
+        const selectorGroup = document.getElementById('provider-selector-group');
+        const nameDisplayGroup = document.getElementById('provider-name-display-group');
+        if (selectorGroup) selectorGroup.style.display = 'block';
+        if (nameDisplayGroup) nameDisplayGroup.style.display = 'none';
+        
+        // Reset form
+        const form = document.getElementById('provider-form');
+        if (form) form.reset();
+        
+        const selectedProvidersEl = document.getElementById('selected-providers');
+        if (selectedProvidersEl) selectedProvidersEl.innerHTML = '';
+        
+        // Clear errors
+        ['provider-error', 'start-date-error', 'end-date-error', 'days-error'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.remove('show');
+        });
+        
+        // Clear exception days
+        const exceptionList = document.getElementById('exception-days-list');
+        if (exceptionList) {
+            exceptionList.innerHTML = '';
+        }
+        exceptionDayCounter = 0;
+        
+        // Reset day checkboxes
+        const dayInputs = document.querySelectorAll('#provider-form .day-input');
+        if (dayInputs) {
+            dayInputs.forEach(cb => {
+                cb.checked = false;
+                const label = cb.closest('.day-checkbox-modern');
+                if (label) {
+                    label.classList.remove('checked');
+                }
+            });
+        }
+        
+        // Reset frequency to weekly
+        const weeklyRadio = document.querySelector('input[name="repeat-frequency"][value="weekly"]');
+        if (weeklyRadio) weeklyRadio.checked = true;
+        
+        // Set default dates
+        const today = new Date().toISOString().split('T')[0];
+        const startDateEl = document.getElementById('provider-start-date');
+        const endDateEl = document.getElementById('provider-end-date');
+        if (startDateEl) startDateEl.value = today;
+        if (endDateEl) {
+            const endDate = new Date();
+            endDate.setFullYear(endDate.getFullYear() + 1);
+            endDateEl.value = endDate.toISOString().split('T')[0];
+        }
+        
+        // Show modal
+        modal.classList.add('show');
+    } catch (error) {
+        console.error('Error in showAddProviderModal:', error);
+    }
 }
 
 function searchProviders() {
@@ -1476,10 +1577,15 @@ function saveProviderAssignment() {
     // Validation
     let hasError = false;
     
-    if (selectedProviders.length === 0) {
-        providerError.textContent = 'Select at least one provider';
-        providerError.classList.add('show');
-        hasError = true;
+    // If editing, skip provider selection validation
+    if (!editingProviderAssignmentId) {
+        if (selectedProviders.length === 0) {
+            providerError.textContent = 'Select at least one provider';
+            providerError.classList.add('show');
+            hasError = true;
+        } else {
+            providerError.classList.remove('show');
+        }
     } else {
         providerError.classList.remove('show');
     }
@@ -1509,7 +1615,7 @@ function saveProviderAssignment() {
         hasError = true;
     }
     
-    const activeDays = Array.from(document.querySelectorAll('#provider-form .day-checkbox input:checked'))
+    const activeDays = Array.from(document.querySelectorAll('#provider-form .day-input:checked'))
         .map(cb => cb.value);
     
     if (activeDays.length === 0) {
@@ -1522,7 +1628,43 @@ function saveProviderAssignment() {
     
     if (hasError) return;
     
-    // Check for duplicate assignments
+    // Check for coverage gaps
+    const biWeekly = document.querySelector('input[name="repeat-frequency"]:checked')?.value === 'bi-weekly';
+    const exceptionDays = getExceptionDays();
+    
+    // If editing, update existing assignment
+    if (editingProviderAssignmentId) {
+        const assignment = zone.providerAssignments?.find(a => a.id === editingProviderAssignmentId);
+        if (assignment) {
+            assignment.startDate = startDate;
+            assignment.endDate = endDate;
+            assignment.activeDays = activeDays;
+            assignment.biWeekly = biWeekly;
+            assignment.exceptionDays = exceptionDays;
+            
+            // Check for gaps after updating
+            const gaps = calculateCoverageGaps(zone, 90);
+            if (gaps.length > 0) {
+                showWarning(
+                    `This assignment may leave coverage gaps. Review the timeline to ensure continuous coverage.`,
+                    () => {
+                        closeModal('provider-modal');
+                        renderProvidersTab();
+                        renderTimelineTab();
+                        renderDashboard();
+                    }
+                );
+            } else {
+                closeModal('provider-modal');
+                renderProvidersTab();
+                renderTimelineTab();
+                renderDashboard();
+            }
+        }
+        return;
+    }
+    
+    // Check for duplicate assignments (only for new assignments)
     const duplicates = selectedProviders.filter(sp => {
         return zone.providerAssignments?.some(assignment => 
             assignment.providerId === sp.id &&
@@ -1537,10 +1679,7 @@ function saveProviderAssignment() {
         return;
     }
     
-    // Check for coverage gaps
-    const biWeekly = document.getElementById('bi-weekly').checked;
-    
-    // Save assignments
+    // Save new assignments
     selectedProviders.forEach(provider => {
         const assignmentId = zone.providerAssignments?.length > 0 
             ? Math.max(...zone.providerAssignments.map(a => a.id)) + 1 
@@ -1553,7 +1692,8 @@ function saveProviderAssignment() {
             startDate: startDate,
             endDate: endDate,
             activeDays: activeDays,
-            biWeekly: biWeekly
+            biWeekly: biWeekly,
+            exceptionDays: exceptionDays
         };
         
         if (!zone.providerAssignments) {
@@ -1583,110 +1723,91 @@ function saveProviderAssignment() {
 }
 
 function editProviderAssignment(assignmentId) {
-    if (!currentZoneId) return;
-    
-    const zone = zones.find(z => z.id === currentZoneId);
-    if (!zone) return;
-    
-    const assignment = zone.providerAssignments?.find(a => a.id === assignmentId);
-    if (!assignment) return;
-    
-    editingProviderAssignmentId = assignmentId;
-    
-    document.getElementById('edit-provider-name').value = assignment.providerName;
-    document.getElementById('edit-provider-start-date').value = assignment.startDate;
-    document.getElementById('edit-provider-end-date').value = assignment.endDate;
-    document.getElementById('edit-bi-weekly').checked = assignment.biWeekly;
-    
-    // Set active days
-    ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].forEach(day => {
-        document.getElementById(`edit-${day}`).checked = assignment.activeDays.includes(day);
-    });
-    
-    document.getElementById('edit-provider-modal').classList.add('show');
+    try {
+        if (!currentZoneId) {
+            console.error('No current zone ID');
+            return;
+        }
+        
+        const zone = zones.find(z => z.id === currentZoneId);
+        if (!zone) {
+            console.error('Zone not found');
+            return;
+        }
+        
+        const assignment = zone.providerAssignments?.find(a => a.id === assignmentId);
+        if (!assignment) {
+            console.error('Assignment not found');
+            return;
+        }
+        
+        editingProviderAssignmentId = assignmentId;
+        
+        const modal = document.getElementById('provider-modal');
+        if (!modal) {
+            console.error('Provider modal not found');
+            return;
+        }
+        
+        // Update modal title and button
+        const titleEl = document.getElementById('provider-modal-title');
+        const saveTextEl = document.getElementById('provider-modal-save-text');
+        if (titleEl) titleEl.textContent = 'Edit Provider Assignment';
+        if (saveTextEl) saveTextEl.textContent = 'Update Assignment';
+        
+        // Hide provider selector, show provider name display
+        const selectorGroup = document.getElementById('provider-selector-group');
+        const nameDisplayGroup = document.getElementById('provider-name-display-group');
+        const nameDisplay = document.getElementById('provider-name-display');
+        if (selectorGroup) selectorGroup.style.display = 'none';
+        if (nameDisplayGroup) nameDisplayGroup.style.display = 'block';
+        if (nameDisplay) nameDisplay.value = assignment.providerName;
+        
+        // Set dates
+        const startDateEl = document.getElementById('provider-start-date');
+        const endDateEl = document.getElementById('provider-end-date');
+        if (startDateEl) startDateEl.value = assignment.startDate;
+        if (endDateEl) endDateEl.value = assignment.endDate;
+        
+        // Set repeat frequency
+        const repeatFrequency = assignment.biWeekly ? 'bi-weekly' : 'weekly';
+        const frequencyRadio = document.querySelector(`input[name="repeat-frequency"][value="${repeatFrequency}"]`);
+        if (frequencyRadio) {
+            frequencyRadio.checked = true;
+        }
+        
+        // Set active days
+        ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].forEach(day => {
+            const checkbox = document.getElementById(`provider-${day}`);
+            if (checkbox) {
+                checkbox.checked = assignment.activeDays.includes(day);
+                const label = checkbox.closest('.day-checkbox-modern');
+                if (label) {
+                    if (checkbox.checked) {
+                        label.classList.add('checked');
+                    } else {
+                        label.classList.remove('checked');
+                    }
+                }
+            }
+        });
+        
+        // Load exception days
+        loadExceptionDays(assignment.exceptionDays || [], '');
+        
+        // Clear errors
+        ['provider-error', 'start-date-error', 'end-date-error', 'days-error'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.remove('show');
+        });
+        
+        // Show modal
+        modal.classList.add('show');
+    } catch (error) {
+        console.error('Error in editProviderAssignment:', error);
+    }
 }
 
-function updateProviderAssignment() {
-    if (!currentZoneId || !editingProviderAssignmentId) return;
-    
-    const zone = zones.find(z => z.id === currentZoneId);
-    if (!zone) return;
-    
-    const assignment = zone.providerAssignments?.find(a => a.id === editingProviderAssignmentId);
-    if (!assignment) return;
-    
-    const startDate = document.getElementById('edit-provider-start-date').value;
-    const endDate = document.getElementById('edit-provider-end-date').value;
-    const startDateError = document.getElementById('edit-start-date-error');
-    const endDateError = document.getElementById('edit-end-date-error');
-    const daysError = document.getElementById('edit-days-error');
-    
-    // Validation
-    let hasError = false;
-    
-    if (!startDate) {
-        startDateError.textContent = 'Start date is required';
-        startDateError.classList.add('show');
-        hasError = true;
-    } else {
-        startDateError.classList.remove('show');
-    }
-    
-    if (!endDate) {
-        endDateError.textContent = 'End date is required';
-        endDateError.classList.add('show');
-        hasError = true;
-    } else {
-        endDateError.classList.remove('show');
-    }
-    
-    if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
-        endDateError.textContent = 'End date must be after start date';
-        endDateError.classList.add('show');
-        hasError = true;
-    }
-    
-    const activeDays = Array.from(document.querySelectorAll('#edit-provider-form .day-checkbox input:checked'))
-        .map(cb => cb.value);
-    
-    if (activeDays.length === 0) {
-        daysError.textContent = 'Select at least one active day';
-        daysError.classList.add('show');
-        hasError = true;
-    } else {
-        daysError.classList.remove('show');
-    }
-    
-    if (hasError) return;
-    
-    // Check for gaps
-    const oldStartDate = assignment.startDate;
-    const oldEndDate = assignment.endDate;
-    
-    assignment.startDate = startDate;
-    assignment.endDate = endDate;
-    assignment.activeDays = activeDays;
-    assignment.biWeekly = document.getElementById('edit-bi-weekly').checked;
-    
-    const gaps = calculateCoverageGaps(zone, 90);
-    if (gaps.length > 0) {
-        showWarning(
-            `This change would leave Zone ${zone.name} without coverage starting ${formatDate(gaps[0].start.toISOString().split('T')[0])}. Assign another provider first.`,
-            () => {
-                // Revert changes
-                assignment.startDate = oldStartDate;
-                assignment.endDate = oldEndDate;
-                showWarning('Save blocked. Please resolve coverage gaps first.');
-            }
-        );
-        return;
-    }
-    
-    closeModal('edit-provider-modal');
-    renderProvidersTab();
-    renderTimelineTab();
-    renderDashboard();
-}
 
 function removeProviderAssignment(assignmentId) {
     if (!currentZoneId) return;
@@ -2186,6 +2307,80 @@ function clearDateHighlight() {
             el.remove();
         }
     });
+}
+
+// Exception Days Functions
+let exceptionDayCounter = 0;
+
+function addExceptionDay(formPrefix = '') {
+    const listId = 'exception-days-list';
+    const list = document.getElementById(listId);
+    if (!list) return;
+    
+    const dayId = `exception-day-${exceptionDayCounter++}`;
+    const dayItem = document.createElement('div');
+    dayItem.className = 'exception-day-item';
+    dayItem.id = dayId;
+    dayItem.innerHTML = `
+        <div class="exception-day-fields">
+            <input type="date" class="exception-date" placeholder="Select date" required>
+            <input type="text" class="exception-reason" placeholder="Reason (e.g., Vacation, Holiday)" required>
+            <button type="button" class="btn btn-danger btn-sm" onclick="removeExceptionDay('${dayId}')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `;
+    list.appendChild(dayItem);
+}
+
+function removeExceptionDay(dayId) {
+    const dayItem = document.getElementById(dayId);
+    if (dayItem) {
+        dayItem.remove();
+    }
+}
+
+function getExceptionDays(formPrefix = '') {
+    const listId = 'exception-days-list';
+    const list = document.getElementById(listId);
+    if (!list) return [];
+    
+    const exceptionDays = [];
+    const items = list.querySelectorAll('.exception-day-item');
+    items.forEach(item => {
+        const date = item.querySelector('.exception-date').value;
+        const reason = item.querySelector('.exception-reason').value;
+        if (date && reason) {
+            exceptionDays.push({ date, reason });
+        }
+    });
+    return exceptionDays;
+}
+
+function loadExceptionDays(exceptionDays, formPrefix = '') {
+    const listId = 'exception-days-list';
+    const list = document.getElementById(listId);
+    if (!list) return;
+    
+    list.innerHTML = '';
+    if (exceptionDays && exceptionDays.length > 0) {
+        exceptionDays.forEach(exception => {
+            const dayId = `exception-day-${exceptionDayCounter++}`;
+            const dayItem = document.createElement('div');
+            dayItem.className = 'exception-day-item';
+            dayItem.id = dayId;
+            dayItem.innerHTML = `
+                <div class="exception-day-fields">
+                    <input type="date" class="exception-date" value="${exception.date}" placeholder="Select date" required>
+                    <input type="text" class="exception-reason" value="${exception.reason}" placeholder="Reason (e.g., Vacation, Holiday)" required>
+                    <button type="button" class="btn btn-danger btn-sm" onclick="removeExceptionDay('${dayId}')">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+            list.appendChild(dayItem);
+        });
+    }
 }
 
 // Utility functions

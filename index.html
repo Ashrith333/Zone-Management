@@ -109,23 +109,33 @@
                             <thead>
                                 <tr>
                                     <th>Zone Name</th>
-                                    <th>ZIP Codes</th>
-                                    <th>Patients</th>
-                                    <th>Providers</th>
-                                    <th>Ratio</th>
-                                    <th>Coverage Gaps</th>
+                                    <th class="sortable" onclick="sortTable('zipCodes')">
+                                        ZIP Codes
+                                        <i class="fas fa-sort" id="sort-icon-zipCodes"></i>
+                                    </th>
+                                    <th class="sortable" onclick="sortTable('patients')">
+                                        Members
+                                        <i class="fas fa-sort" id="sort-icon-patients"></i>
+                                    </th>
+                                    <th class="sortable" onclick="sortTable('providers')">
+                                        Providers
+                                        <i class="fas fa-sort" id="sort-icon-providers"></i>
+                                    </th>
+                                    <th class="sortable" onclick="sortTable('ratio')">
+                                        Members to Providers ratio
+                                        <i class="fas fa-sort" id="sort-icon-ratio"></i>
+                                    </th>
                                     <th class="sortable" onclick="sortTable('gapDays')">
                                         Days Without Coverage
                                         <i class="fas fa-sort" id="sort-icon-gapDays"></i>
                                     </th>
-                                    <th>Multi-Zone Patients</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="dashboard-table-body">
                                 <!-- Populated by JavaScript -->
                                 <tr>
-                                    <td colspan="9" style="text-align: center; padding: 2rem; color: #64748b;">
+                                    <td colspan="7" style="text-align: center; padding: 2rem; color: #64748b;">
                                         <i class="fas fa-spinner fa-spin"></i> Loading zones...
                                     </td>
                                 </tr>
@@ -306,18 +316,18 @@
         </div>
     </div>
 
-    <!-- Add Provider Modal -->
+    <!-- Add/Edit Provider Modal -->
     <div id="provider-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Add Provider to Zone</h3>
+                <h3 id="provider-modal-title">Add Provider to Zone</h3>
                 <button class="modal-close" onclick="closeModal('provider-modal')">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
             <div class="modal-body">
                 <form id="provider-form">
-                    <div class="form-group">
+                    <div class="form-group" id="provider-selector-group">
                         <label>Select Provider(s) <span class="required">*</span></label>
                         <div class="provider-selector">
                             <input type="text" id="provider-search" placeholder="Search providers..." oninput="searchProviders()">
@@ -325,6 +335,10 @@
                             <div id="selected-providers" class="selected-providers"></div>
                         </div>
                         <div class="error-message" id="provider-error"></div>
+                    </div>
+                    <div class="form-group" id="provider-name-display-group" style="display: none;">
+                        <label>Provider</label>
+                        <input type="text" id="provider-name-display" readonly>
                     </div>
                     <div class="form-group">
                         <label>Start Date <span class="required">*</span></label>
@@ -338,110 +352,82 @@
                     </div>
                     <div class="form-group">
                         <label>Active Days <span class="required">*</span></label>
-                        <div class="days-selector">
-                            <label class="day-checkbox">
-                                <input type="checkbox" value="monday"> Monday
-                            </label>
-                            <label class="day-checkbox">
-                                <input type="checkbox" value="tuesday"> Tuesday
-                            </label>
-                            <label class="day-checkbox">
-                                <input type="checkbox" value="wednesday"> Wednesday
-                            </label>
-                            <label class="day-checkbox">
-                                <input type="checkbox" value="thursday"> Thursday
-                            </label>
-                            <label class="day-checkbox">
-                                <input type="checkbox" value="friday"> Friday
-                            </label>
-                            <label class="day-checkbox">
-                                <input type="checkbox" value="saturday"> Saturday
-                            </label>
-                            <label class="day-checkbox">
-                                <input type="checkbox" value="sunday"> Sunday
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" id="bi-weekly"> Bi-weekly (every other week)
-                            </label>
+                        <div class="days-selector-modern">
+                            <div class="days-quick-select">
+                                <button type="button" class="quick-select-btn" onclick="selectAllDays()">
+                                    <i class="fas fa-check-double"></i> Select All
+                                </button>
+                                <button type="button" class="quick-select-btn" onclick="selectWeekdays()">
+                                    <i class="fas fa-briefcase"></i> Weekdays Only
+                                </button>
+                                <button type="button" class="quick-select-btn" onclick="clearAllDays()">
+                                    <i class="fas fa-times"></i> Clear All
+                                </button>
+                            </div>
+                            <div class="days-selector-grid">
+                                <label class="day-checkbox-modern" data-day="monday">
+                                    <input type="checkbox" value="monday" class="day-input" id="provider-monday">
+                                    <span class="day-label-modern">Mon</span>
+                                </label>
+                                <label class="day-checkbox-modern" data-day="tuesday">
+                                    <input type="checkbox" value="tuesday" class="day-input" id="provider-tuesday">
+                                    <span class="day-label-modern">Tue</span>
+                                </label>
+                                <label class="day-checkbox-modern" data-day="wednesday">
+                                    <input type="checkbox" value="wednesday" class="day-input" id="provider-wednesday">
+                                    <span class="day-label-modern">Wed</span>
+                                </label>
+                                <label class="day-checkbox-modern" data-day="thursday">
+                                    <input type="checkbox" value="thursday" class="day-input" id="provider-thursday">
+                                    <span class="day-label-modern">Thu</span>
+                                </label>
+                                <label class="day-checkbox-modern" data-day="friday">
+                                    <input type="checkbox" value="friday" class="day-input" id="provider-friday">
+                                    <span class="day-label-modern">Fri</span>
+                                </label>
+                                <label class="day-checkbox-modern" data-day="saturday">
+                                    <input type="checkbox" value="saturday" class="day-input" id="provider-saturday">
+                                    <span class="day-label-modern">Sat</span>
+                                </label>
+                                <label class="day-checkbox-modern" data-day="sunday">
+                                    <input type="checkbox" value="sunday" class="day-input" id="provider-sunday">
+                                    <span class="day-label-modern">Sun</span>
+                                </label>
+                            </div>
+                            <div class="repeat-frequency-selector">
+                                <label class="frequency-option">
+                                    <input type="radio" name="repeat-frequency" value="weekly" checked>
+                                    <span class="frequency-label">
+                                        <i class="fas fa-calendar-week"></i>
+                                        <span>Weekly</span>
+                                    </span>
+                                </label>
+                                <label class="frequency-option">
+                                    <input type="radio" name="repeat-frequency" value="bi-weekly" id="bi-weekly">
+                                    <span class="frequency-label">
+                                        <i class="fas fa-calendar-alt"></i>
+                                        <span>Bi-weekly</span>
+                                    </span>
+                                </label>
+                            </div>
                         </div>
                         <div class="error-message" id="days-error"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>Exception Days (Days when provider is not available)</label>
+                        <div id="exception-days-list" class="exception-days-list">
+                            <!-- Exception days will be added here -->
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="addExceptionDay()" style="margin-top: 0.5rem;">
+                            <i class="fas fa-plus"></i> Add Exception Day
+                        </button>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('provider-modal')">Cancel</button>
-                <button class="btn btn-primary" onclick="saveProviderAssignment()">
-                    <i class="fas fa-save"></i> Save Assignment
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Edit Provider Assignment Modal -->
-    <div id="edit-provider-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Edit Provider Assignment</h3>
-                <button class="modal-close" onclick="closeModal('edit-provider-modal')">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="modal-body">
-                <form id="edit-provider-form">
-                    <div class="form-group">
-                        <label>Provider</label>
-                        <input type="text" id="edit-provider-name" readonly>
-                    </div>
-                    <div class="form-group">
-                        <label>Start Date <span class="required">*</span></label>
-                        <input type="date" id="edit-provider-start-date" required>
-                        <div class="error-message" id="edit-start-date-error"></div>
-                    </div>
-                    <div class="form-group">
-                        <label>End Date <span class="required">*</span></label>
-                        <input type="date" id="edit-provider-end-date" required>
-                        <div class="error-message" id="edit-end-date-error"></div>
-                    </div>
-                    <div class="form-group">
-                        <label>Active Days <span class="required">*</span></label>
-                        <div class="days-selector">
-                            <label class="day-checkbox">
-                                <input type="checkbox" value="monday" id="edit-monday"> Monday
-                            </label>
-                            <label class="day-checkbox">
-                                <input type="checkbox" value="tuesday" id="edit-tuesday"> Tuesday
-                            </label>
-                            <label class="day-checkbox">
-                                <input type="checkbox" value="wednesday" id="edit-wednesday"> Wednesday
-                            </label>
-                            <label class="day-checkbox">
-                                <input type="checkbox" value="thursday" id="edit-thursday"> Thursday
-                            </label>
-                            <label class="day-checkbox">
-                                <input type="checkbox" value="friday" id="edit-friday"> Friday
-                            </label>
-                            <label class="day-checkbox">
-                                <input type="checkbox" value="saturday" id="edit-saturday"> Saturday
-                            </label>
-                            <label class="day-checkbox">
-                                <input type="checkbox" value="sunday" id="edit-sunday"> Sunday
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" id="edit-bi-weekly"> Bi-weekly (every other week)
-                            </label>
-                        </div>
-                        <div class="error-message" id="edit-days-error"></div>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal('edit-provider-modal')">Cancel</button>
-                <button class="btn btn-primary" onclick="updateProviderAssignment()">
-                    <i class="fas fa-save"></i> Update Assignment
+                <button class="btn btn-primary" onclick="saveProviderAssignment()" id="provider-modal-save-btn">
+                    <i class="fas fa-save"></i> <span id="provider-modal-save-text">Save Assignment</span>
                 </button>
             </div>
         </div>
