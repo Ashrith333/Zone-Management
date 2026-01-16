@@ -6,6 +6,8 @@ let editingProviderAssignmentId = null;
 let selectedZipCodes = [];
 let selectedProviders = [];
 let warningCallback = null;
+let currentSortColumn = null;
+let currentSortDirection = 'asc';
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
@@ -115,8 +117,26 @@ function renderDashboard() {
         }
         updateDashboardStats();
         renderDashboardTable();
+        renderOverviewTimeline();
     } catch (error) {
         console.error('Error rendering dashboard:', error);
+    }
+}
+
+function showOverviewTab(tabName) {
+    // Update tabs
+    document.querySelectorAll('.overview-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.tab === tabName);
+    });
+    
+    // Update content
+    document.querySelectorAll('.overview-tab-content').forEach(content => {
+        content.classList.toggle('active', content.id === `overview-${tabName}-tab`);
+    });
+    
+    // Render timeline if needed
+    if (tabName === 'timeline') {
+        renderOverviewTimeline();
     }
 }
 
@@ -164,13 +184,65 @@ function renderDashboardTable() {
         console.error('dashboard-table-body not found');
         return;
     }
+    
+    // Get filter values
+    const searchTerm = document.getElementById('zone-search-filter')?.value.toLowerCase() || '';
+    const showGapsOnly = document.getElementById('show-gaps-only')?.checked || false;
+    const gapDaysRange = parseInt(document.getElementById('gap-days-range')?.value || '60');
+    
+    // Filter zones
+    let filteredZones = zones.filter(zone => {
+        // Search filter
+        if (searchTerm) {
+            const nameMatch = zone.name.toLowerCase().includes(searchTerm);
+            const zipMatch = zone.zipCodes.some(zip => zip.includes(searchTerm));
+            if (!nameMatch && !zipMatch) return false;
+        }
+        
+        // Gap filter
+        if (showGapsOnly) {
+            const gaps = calculateCoverageGaps(zone, gapDaysRange);
+            if (gaps.length === 0) return false;
+        }
+        
+        return true;
+    });
+    
+    // Sort zones if needed
+    if (currentSortColumn === 'gapDays') {
+        filteredZones.sort((a, b) => {
+            const gapsA = calculateCoverageGaps(a, gapDaysRange);
+            const gapsB = calculateCoverageGaps(b, gapDaysRange);
+            const daysA = gapsA.reduce((sum, gap) => sum + gap.days, 0);
+            const daysB = gapsB.reduce((sum, gap) => sum + gap.days, 0);
+            
+            if (currentSortDirection === 'asc') {
+                return daysA - daysB;
+            } else {
+                return daysB - daysA;
+            }
+        });
+    }
+    
     tbody.innerHTML = '';
     
-    zones.forEach(zone => {
+    if (filteredZones.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="9" style="text-align: center; padding: 2rem; color: #64748b;">
+                    <i class="fas fa-search"></i> No zones found matching your filters.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    filteredZones.forEach(zone => {
         const patients = getPatientsInZone(zone);
         const providerCount = zone.providerAssignments?.length || 0;
         const ratio = providerCount > 0 ? Math.round(patients.length / providerCount) : 0;
-        const gaps = calculateCoverageGaps(zone, 90);
+        const gaps = calculateCoverageGaps(zone, gapDaysRange);
+        const gapDays = gaps.reduce((sum, gap) => sum + gap.days, 0);
         const multiZonePatients = getPatientsInMultipleZones();
         
         const row = document.createElement('tr');
@@ -198,6 +270,12 @@ function renderDashboardTable() {
                     '<span class="no-gap">✓ No gaps</span>'
                 }
             </td>
+            <td>
+                ${gapDays > 0 ? 
+                    `<span class="gap-days-count">${gapDays} days</span>` : 
+                    '<span class="no-gap">0 days</span>'
+                }
+            </td>
             <td>${multiZonePatients > 0 ? `<span class="gap-badge">${multiZonePatients}</span>` : '0'}</td>
             <td>
                 <div class="table-menu" style="position: relative;">
@@ -223,6 +301,32 @@ function renderDashboardTable() {
     });
 }
 
+function filterZones() {
+    renderDashboardTable();
+}
+
+function sortTable(column) {
+    if (currentSortColumn === column) {
+        // Toggle direction
+        currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSortColumn = column;
+        currentSortDirection = 'asc';
+    }
+    
+    // Update sort icons
+    document.querySelectorAll('.sortable i').forEach(icon => {
+        icon.className = 'fas fa-sort';
+    });
+    
+    const sortIcon = document.getElementById(`sort-icon-${column}`);
+    if (sortIcon) {
+        sortIcon.className = currentSortDirection === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down';
+    }
+    
+    renderDashboardTable();
+}
+
 function toggleMenu(zoneId) {
     const menu = document.getElementById(`menu-${zoneId}`);
     document.querySelectorAll('.menu-dropdown').forEach(m => {
@@ -240,7 +344,7 @@ function toggleTableMenu(zoneId) {
 }
 
 // Zone Detail
-function showZoneDetail(zoneId) {
+function showZoneDetail(zoneId, defaultTab = 'providers') {
     currentZoneId = zoneId;
     const zone = zones.find(z => z.id === zoneId);
     if (!zone) return;
@@ -255,8 +359,8 @@ function showZoneDetail(zoneId) {
     // Update header
     document.getElementById('zone-detail-name').textContent = zone.name;
     
-    // Show first tab
-    showDetailTab('providers');
+    // Show specified tab (default to providers, but can be 'timeline')
+    showDetailTab(defaultTab);
     
     // Render content
     renderProvidersTab();
@@ -353,7 +457,7 @@ function renderTimelineTab() {
     
     let startDate, endDate;
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Normalize to midnight for consistent comparison
+    today.setHours(0, 0, 0, 0);
     
     if (range === 'custom') {
         const customStart = document.getElementById('custom-start-date').value;
@@ -366,7 +470,7 @@ function renderTimelineTab() {
         } else {
             startDate = new Date(today);
             endDate = new Date(today);
-            endDate.setDate(endDate.getDate() + 90);
+            endDate.setDate(endDate.getDate() + 60);
         }
     } else {
         startDate = new Date(today);
@@ -374,42 +478,417 @@ function renderTimelineTab() {
         endDate.setDate(endDate.getDate() + parseInt(range));
     }
     
-    const assignments = zone.providerAssignments || [];
-    const gaps = calculateCoverageGaps(zone, Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)));
-    
     const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
     const dayWidth = 100 / totalDays;
     
-    container.innerHTML = `
-        <div class="timeline-header">
-            <div class="timeline-date-range">
-                <i class="fas fa-calendar-alt"></i> ${formatDate(startDate.toISOString().split('T')[0])} - ${formatDate(endDate.toISOString().split('T')[0])}
-            </div>
-            <div class="timeline-legend">
-                <span class="legend-item">
-                    <span class="legend-color" style="background: #3b82f6;"></span> Provider Coverage
-                </span>
-                <span class="legend-item">
-                    <span class="legend-color" style="background: #fee2e2; border: 2px dashed #dc2626;"></span> Coverage Gap
-                </span>
-            </div>
-        </div>
-        <div class="timeline-grid" id="timeline-grid">
-            ${renderDateMarkers(startDate, endDate, dayWidth, today)}
-            ${renderTimelineBars(assignments, startDate, endDate, dayWidth)}
-            ${renderTimelineGaps(gaps, startDate, endDate, dayWidth)}
-            ${renderTodayIndicator(today, startDate, endDate, dayWidth)}
-        </div>
-    `;
+    // Get filter values
+    const searchTerm = document.getElementById('provider-timeline-search')?.value.toLowerCase() || '';
+    const showGapsOnly = document.getElementById('provider-show-gaps-only')?.checked || false;
     
-    if (assignments.length === 0 && gaps.length === 0) {
+    // Get assignments and filter
+    let filteredAssignments = (zone.providerAssignments || []).filter(assignment => {
+        // Search filter
+        if (searchTerm) {
+            const nameMatch = assignment.providerName.toLowerCase().includes(searchTerm);
+            if (!nameMatch) return false;
+        }
+        
+        // Gap filter
+        if (showGapsOnly) {
+            const providerGaps = calculateProviderGaps(assignment, startDate, endDate);
+            if (providerGaps.length === 0) return false;
+        }
+        
+        return true;
+    });
+    
+    // Sort providers if needed
+    if (currentSortColumn === 'provider-gapDays') {
+        filteredAssignments.sort((a, b) => {
+            const gapsA = calculateProviderGaps(a, startDate, endDate);
+            const gapsB = calculateProviderGaps(b, startDate, endDate);
+            const daysA = gapsA.reduce((sum, gap) => sum + gap.days, 0);
+            const daysB = gapsB.reduce((sum, gap) => sum + gap.days, 0);
+            
+            if (currentSortDirection === 'asc') {
+                return daysA - daysB;
+            } else {
+                return daysB - daysA;
+            }
+        });
+    } else if (currentSortColumn === 'provider-name') {
+        filteredAssignments.sort((a, b) => {
+            if (currentSortDirection === 'asc') {
+                return a.providerName.localeCompare(b.providerName);
+            } else {
+                return b.providerName.localeCompare(a.providerName);
+            }
+        });
+    }
+    
+    if (filteredAssignments.length === 0 && zone.providerAssignments?.length > 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-search"></i>
+                <p>No providers found matching your filters.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    if (zone.providerAssignments?.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
                 <i class="fas fa-calendar-alt"></i>
                 <p>No providers assigned. Add a provider to get started.</p>
             </div>
         `;
+        return;
     }
+    
+    // Render zone-level summary and provider-level timelines
+    container.innerHTML = `
+        <div class="zone-timeline-header">
+            <div class="timeline-date-range">
+                <i class="fas fa-calendar-alt"></i> ${formatDate(startDate.toISOString().split('T')[0])} - ${formatDate(endDate.toISOString().split('T')[0])}
+            </div>
+            <div class="timeline-legend">
+                <span class="legend-item">
+                    <span class="legend-color" style="background: #10b981;"></span> Coverage
+                </span>
+                <span class="legend-item">
+                    <span class="legend-color" style="background: #dc2626;"></span> Gap
+                </span>
+            </div>
+        </div>
+        <div class="unified-timeline-container">
+            <div class="unified-timeline-header-sticky">
+                <div class="unified-timeline-header">
+                    <div class="unified-date-header-spacer">
+                        <div class="spacer-provider-name"></div>
+                        <div class="spacer-provider-gap-days"></div>
+                    </div>
+                    <div class="unified-date-header-dates" id="unified-date-header-dates">
+                        ${renderDayByDayDates(startDate, endDate, today, 'unified')}
+                    </div>
+                </div>
+            </div>
+            <div class="unified-timeline-scroll" id="unified-timeline-scroll">
+                <div class="date-column-highlight" id="unified-date-column-highlight" style="display: none;"></div>
+                <div class="zone-timeline-summary">
+                    <h4>Zone Coverage Summary</h4>
+                    <div class="zone-summary-timeline-wrapper">
+                        <div class="zone-summary-timeline-scroll">
+                            ${renderZoneSummaryTimelineRow(zone, startDate, endDate, dayWidth, today)}
+                        </div>
+                    </div>
+                </div>
+                <div class="provider-timeline-section">
+                    <h4>Provider-Level Coverage</h4>
+                    <div class="provider-timeline-wrapper">
+                        <div class="provider-timeline-scroll">
+                            <div class="provider-timeline-rows">
+                                <div class="provider-timeline-header-row">
+                                    <div class="provider-timeline-name-header">
+                                        <span>Provider Name</span>
+                                        <button class="sort-btn" onclick="sortProviderTimeline('name')">
+                                            <i class="fas fa-sort" id="sort-icon-provider-name"></i>
+                                        </button>
+                                    </div>
+                                    <div class="provider-timeline-gap-days-header">
+                                        <span>Days Without Coverage</span>
+                                        <button class="sort-btn" onclick="sortProviderTimeline('gapDays')">
+                                            <i class="fas fa-sort" id="sort-icon-provider-gapDays"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                ${filteredAssignments.map(assignment => renderProviderTimelineRow(assignment, zone, startDate, endDate, dayWidth, today)).join('')}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Add event listener to close highlight on outside click
+    const unifiedScroll = document.getElementById('unified-timeline-scroll');
+    if (unifiedScroll) {
+        unifiedScroll.addEventListener('click', (event) => {
+            if (!event.target.closest('.timeline-day-cell')) {
+                clearDateHighlight();
+            }
+        });
+    }
+}
+
+// Calculate gaps for a specific provider assignment
+function calculateProviderGaps(assignment, startDate, endDate) {
+    const startNormalized = new Date(startDate);
+    startNormalized.setHours(0, 0, 0, 0);
+    const endNormalized = new Date(endDate);
+    endNormalized.setHours(0, 0, 0, 0);
+    
+    const assignmentStart = new Date(assignment.startDate);
+    assignmentStart.setHours(0, 0, 0, 0);
+    const assignmentEnd = new Date(assignment.endDate);
+    assignmentEnd.setHours(0, 0, 0, 0);
+    
+    const gaps = [];
+    
+    // Gap before assignment
+    if (assignmentStart > startNormalized) {
+        const gapStart = startNormalized;
+        const gapEnd = assignmentStart < endNormalized ? assignmentStart : endNormalized;
+        const gapDays = Math.ceil((gapEnd - gapStart) / (1000 * 60 * 60 * 24));
+        if (gapDays > 0) {
+            gaps.push({ start: gapStart, end: gapEnd, days: gapDays });
+        }
+    }
+    
+    // Gap after assignment
+    if (assignmentEnd < endNormalized) {
+        const gapStart = assignmentEnd > startNormalized ? assignmentEnd : startNormalized;
+        const gapEnd = endNormalized;
+        const gapDays = Math.ceil((gapEnd - gapStart) / (1000 * 60 * 60 * 24));
+        if (gapDays > 0) {
+            gaps.push({ start: gapStart, end: gapEnd, days: gapDays });
+        }
+    }
+    
+    return gaps;
+}
+
+// Render zone summary timeline row (single row showing overall zone coverage)
+function renderZoneSummaryTimelineRow(zone, startDate, endDate, dayWidth, today) {
+    const startNormalized = new Date(startDate);
+    startNormalized.setHours(0, 0, 0, 0);
+    const endNormalized = new Date(endDate);
+    endNormalized.setHours(0, 0, 0, 0);
+    const totalDays = (endNormalized - startNormalized) / (1000 * 60 * 60 * 24);
+    
+    // Get all assignments and gaps
+    const assignments = zone.providerAssignments || [];
+    const gaps = calculateCoverageGaps(zone, totalDays);
+    const gapDays = gaps.reduce((sum, gap) => sum + gap.days, 0);
+    
+    // Build timeline segments (same logic as overview)
+    const segments = [];
+    
+    assignments.forEach(assignment => {
+        const assignmentStart = new Date(assignment.startDate);
+        assignmentStart.setHours(0, 0, 0, 0);
+        const assignmentEnd = new Date(assignment.endDate);
+        assignmentEnd.setHours(0, 0, 0, 0);
+        
+        const displayStart = assignmentStart < startNormalized ? startNormalized : assignmentStart;
+        const displayEnd = assignmentEnd > endNormalized ? endNormalized : assignmentEnd;
+        
+        if (displayStart <= endNormalized && displayEnd >= startNormalized) {
+            segments.push({
+                start: displayStart,
+                end: displayEnd,
+                type: 'coverage'
+            });
+        }
+    });
+    
+    gaps.forEach(gap => {
+        const gapStart = new Date(gap.start);
+        gapStart.setHours(0, 0, 0, 0);
+        const gapEnd = new Date(gap.end);
+        gapEnd.setHours(0, 0, 0, 0);
+        
+        const displayStart = gapStart < startNormalized ? startNormalized : gapStart;
+        const displayEnd = gapEnd > endNormalized ? endNormalized : gapEnd;
+        
+        if (displayStart <= endNormalized && displayEnd >= startNormalized) {
+            segments.push({
+                start: displayStart,
+                end: displayEnd,
+                type: 'gap'
+            });
+        }
+    });
+    
+    segments.sort((a, b) => a.start - b.start);
+    
+    let barHtml = '';
+    let currentPos = 0;
+    
+    if (segments.length === 0) {
+        barHtml = `<div class="timeline-gap-bar" style="left: 0%; width: 100%;"></div>`;
+    } else {
+        segments.forEach(segment => {
+            const daysFromStart = (segment.start - startNormalized) / (1000 * 60 * 60 * 24);
+            const daysDuration = (segment.end - segment.start) / (1000 * 60 * 60 * 24);
+            
+            const left = (daysFromStart / totalDays) * 100;
+            const width = (daysDuration / totalDays) * 100;
+            
+            if (left > currentPos) {
+                const gapLeft = currentPos;
+                const gapWidth = left - currentPos;
+                barHtml += `<div class="timeline-gap-bar" style="left: ${gapLeft}%; width: ${gapWidth}%;"></div>`;
+            }
+            
+            if (segment.type === 'coverage') {
+                barHtml += `<div class="timeline-coverage-bar" style="left: ${left}%; width: ${width}%;"></div>`;
+            } else {
+                const gapDays = Math.ceil((segment.end - segment.start) / (1000 * 60 * 60 * 24));
+                barHtml += `<div class="timeline-gap-bar" style="left: ${left}%; width: ${width}%;" title="Gap: ${gapDays} days"></div>`;
+            }
+            
+            currentPos = left + width;
+        });
+        
+        if (currentPos < 100) {
+            const gapLeft = currentPos;
+            const gapWidth = 100 - currentPos;
+            barHtml += `<div class="timeline-gap-bar" style="left: ${gapLeft}%; width: ${gapWidth}%;"></div>`;
+        }
+    }
+    
+    return `
+        <div class="zone-summary-row">
+            <div class="zone-summary-name-unified">${zone.name} (Overall)</div>
+            <div class="zone-summary-gap-days-unified">
+                ${gapDays > 0 ? 
+                    `<span class="gap-days-count">${gapDays} days</span>` : 
+                    '<span class="no-gap">0 days</span>'
+                }
+            </div>
+            <div class="zone-summary-bar-container">
+                ${barHtml}
+            </div>
+        </div>
+    `;
+}
+
+// Render provider timeline row
+function renderProviderTimelineRow(assignment, zone, startDate, endDate, dayWidth, today) {
+    const startNormalized = new Date(startDate);
+    startNormalized.setHours(0, 0, 0, 0);
+    const endNormalized = new Date(endDate);
+    endNormalized.setHours(0, 0, 0, 0);
+    const totalDays = (endNormalized - startNormalized) / (1000 * 60 * 60 * 24);
+    
+    // Get gaps for this provider
+    const gaps = calculateProviderGaps(assignment, startDate, endDate);
+    const gapDays = gaps.reduce((sum, gap) => sum + gap.days, 0);
+    
+    // Build timeline segments
+    const segments = [];
+    
+    // Coverage period
+    const assignmentStart = new Date(assignment.startDate);
+    assignmentStart.setHours(0, 0, 0, 0);
+    const assignmentEnd = new Date(assignment.endDate);
+    assignmentEnd.setHours(0, 0, 0, 0);
+    
+    const displayStart = assignmentStart < startNormalized ? startNormalized : assignmentStart;
+    const displayEnd = assignmentEnd > endNormalized ? endNormalized : assignmentEnd;
+    
+    if (displayStart <= endNormalized && displayEnd >= startNormalized) {
+        segments.push({
+            start: displayStart,
+            end: displayEnd,
+            type: 'coverage'
+        });
+    }
+    
+    // Add gap periods
+    gaps.forEach(gap => {
+        const gapStart = new Date(gap.start);
+        gapStart.setHours(0, 0, 0, 0);
+        const gapEnd = new Date(gap.end);
+        gapEnd.setHours(0, 0, 0, 0);
+        
+        const displayStart = gapStart < startNormalized ? startNormalized : gapStart;
+        const displayEnd = gapEnd > endNormalized ? endNormalized : gapEnd;
+        
+        if (displayStart <= endNormalized && displayEnd >= startNormalized) {
+            segments.push({
+                start: displayStart,
+                end: displayEnd,
+                type: 'gap'
+            });
+        }
+    });
+    
+    segments.sort((a, b) => a.start - b.start);
+    
+    let barHtml = '';
+    let currentPos = 0;
+    
+    if (segments.length === 0) {
+        barHtml = `<div class="timeline-gap-bar" style="left: 0%; width: 100%;"></div>`;
+    } else {
+        segments.forEach(segment => {
+            const daysFromStart = (segment.start - startNormalized) / (1000 * 60 * 60 * 24);
+            const daysDuration = (segment.end - segment.start) / (1000 * 60 * 60 * 24);
+            
+            const left = (daysFromStart / totalDays) * 100;
+            const width = (daysDuration / totalDays) * 100;
+            
+            if (left > currentPos) {
+                const gapLeft = currentPos;
+                const gapWidth = left - currentPos;
+                barHtml += `<div class="timeline-gap-bar" style="left: ${gapLeft}%; width: ${gapWidth}%;"></div>`;
+            }
+            
+            if (segment.type === 'coverage') {
+                barHtml += `<div class="timeline-coverage-bar" style="left: ${left}%; width: ${width}%;" onclick="event.stopPropagation(); editProviderAssignment(${assignment.id})" title="Coverage: ${formatDate(segment.start.toISOString().split('T')[0])} to ${formatDate(segment.end.toISOString().split('T')[0])}"></div>`;
+            } else {
+                const gapDays = Math.ceil((segment.end - segment.start) / (1000 * 60 * 60 * 24));
+                barHtml += `<div class="timeline-gap-bar" style="left: ${left}%; width: ${width}%;" title="Gap: ${formatDate(segment.start.toISOString().split('T')[0])} to ${formatDate(segment.end.toISOString().split('T')[0])} (${gapDays} days)"></div>`;
+            }
+            
+            currentPos = left + width;
+        });
+        
+        if (currentPos < 100) {
+            const gapLeft = currentPos;
+            const gapWidth = 100 - currentPos;
+            barHtml += `<div class="timeline-gap-bar" style="left: ${gapLeft}%; width: ${gapWidth}%;"></div>`;
+        }
+    }
+    
+    return `
+        <div class="provider-timeline-row" onclick="editProviderAssignment(${assignment.id})">
+            <div class="provider-timeline-name">${assignment.providerName}</div>
+            <div class="provider-timeline-gap-days">
+                ${gapDays > 0 ? 
+                    `<span class="gap-days-count">${gapDays} days</span>` : 
+                    '<span class="no-gap">0 days</span>'
+                }
+            </div>
+            <div class="provider-timeline-bar-container">
+                ${barHtml}
+            </div>
+        </div>
+    `;
+}
+
+function sortProviderTimeline(column) {
+    if (currentSortColumn === `provider-${column}`) {
+        currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSortColumn = `provider-${column}`;
+        currentSortDirection = 'asc';
+    }
+    
+    // Update sort icons
+    document.querySelectorAll('.provider-timeline-header-row .sort-btn i').forEach(icon => {
+        icon.className = 'fas fa-sort';
+    });
+    
+    const sortIcon = document.getElementById(`sort-icon-provider-${column}`);
+    if (sortIcon) {
+        sortIcon.className = currentSortDirection === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down';
+    }
+    
+    renderTimelineTab();
 }
 
 function renderTimelineBars(assignments, startDate, endDate, dayWidth) {
@@ -1257,6 +1736,456 @@ function confirmWarning() {
     } else {
         closeModal('warning-modal');
     }
+}
+
+// Overview Timeline
+function renderOverviewTimeline() {
+    const container = document.getElementById('overview-timeline-container');
+    if (!container) return;
+    
+    const range = document.getElementById('overview-timeline-range')?.value || '60';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    let startDate, endDate;
+    
+    if (range === 'custom') {
+        const customStart = document.getElementById('overview-custom-start-date')?.value;
+        const customEnd = document.getElementById('overview-custom-end-date')?.value;
+        if (customStart && customEnd) {
+            startDate = new Date(customStart);
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date(customEnd);
+            endDate.setHours(0, 0, 0, 0);
+        } else {
+            startDate = new Date(today);
+            endDate = new Date(today);
+            endDate.setDate(endDate.getDate() + 60);
+        }
+    } else {
+        startDate = new Date(today);
+        endDate = new Date(today);
+        endDate.setDate(endDate.getDate() + parseInt(range));
+    }
+    
+    const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+    const dayWidth = 100 / totalDays;
+    
+    // Get filter values
+    const searchTerm = document.getElementById('timeline-zone-search')?.value.toLowerCase() || '';
+    const showGapsOnly = document.getElementById('timeline-show-gaps-only')?.checked || false;
+    
+    // Filter zones
+    let filteredZones = zones.filter(zone => {
+        // Search filter
+        if (searchTerm) {
+            const nameMatch = zone.name.toLowerCase().includes(searchTerm);
+            const zipMatch = zone.zipCodes.some(zip => zip.includes(searchTerm));
+            if (!nameMatch && !zipMatch) return false;
+        }
+        
+        // Gap filter
+        if (showGapsOnly) {
+            const gaps = calculateCoverageGaps(zone, totalDays);
+            if (gaps.length === 0) return false;
+        }
+        
+        return true;
+    });
+    
+    // Sort zones by gap days if needed
+    if (currentSortColumn === 'timeline-gapDays') {
+        filteredZones.sort((a, b) => {
+            const gapsA = calculateCoverageGaps(a, totalDays);
+            const gapsB = calculateCoverageGaps(b, totalDays);
+            const daysA = gapsA.reduce((sum, gap) => sum + gap.days, 0);
+            const daysB = gapsB.reduce((sum, gap) => sum + gap.days, 0);
+            
+            if (currentSortDirection === 'asc') {
+                return daysA - daysB;
+            } else {
+                return daysB - daysA;
+            }
+        });
+    }
+    
+    if (filteredZones.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-search"></i>
+                <p>No zones found matching your filters.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = `
+        <div class="overview-timeline-header">
+            <div class="timeline-date-range">
+                <i class="fas fa-calendar-alt"></i> ${formatDate(startDate.toISOString().split('T')[0])} - ${formatDate(endDate.toISOString().split('T')[0])}
+            </div>
+            <div class="timeline-legend">
+                <span class="legend-item">
+                    <span class="legend-color" style="background: #10b981;"></span> Coverage
+                </span>
+                <span class="legend-item">
+                    <span class="legend-color" style="background: #dc2626;"></span> Gap
+                </span>
+            </div>
+        </div>
+        <div class="overview-timeline-wrapper">
+            <div class="overview-timeline-scroll" id="overview-timeline-scroll">
+                <div class="overview-timeline-date-header">
+                    <div class="timeline-date-header-spacer">
+                        <div class="spacer-zone-name"></div>
+                        <div class="spacer-gap-days"></div>
+                    </div>
+                    <div class="timeline-date-header-dates">
+                        ${renderDayByDayDates(startDate, endDate, today, 'overview')}
+                    </div>
+                </div>
+                <div class="overview-timeline-zones">
+                    <div class="timeline-zones-header">
+                        <div class="timeline-zone-name-header">
+                            <span>Zone Name</span>
+                            <button class="sort-btn" onclick="sortTimelineZones('name')">
+                                <i class="fas fa-sort" id="sort-icon-timeline-name"></i>
+                            </button>
+                        </div>
+                        <div class="timeline-zone-gap-days-header">
+                            <span>Days Without Coverage</span>
+                            <button class="sort-btn" onclick="sortTimelineZones('gapDays')">
+                                <i class="fas fa-sort" id="sort-icon-timeline-gapDays"></i>
+                            </button>
+                        </div>
+                    </div>
+                    ${filteredZones.map(zone => renderZoneTimelineRow(zone, startDate, endDate, dayWidth, today)).join('')}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderDayByDayDates(startDate, endDate, today, context = 'overview') {
+    const startNormalized = new Date(startDate);
+    startNormalized.setHours(0, 0, 0, 0);
+    const endNormalized = new Date(endDate);
+    endNormalized.setHours(0, 0, 0, 0);
+    const totalDays = Math.ceil((endNormalized - startNormalized) / (1000 * 60 * 60 * 24));
+    
+    const todayNormalized = new Date(today);
+    todayNormalized.setHours(0, 0, 0, 0);
+    
+    let html = '';
+    const dayWidth = 100 / totalDays;
+    
+    // For longer ranges, show every few days; for shorter ranges, show every day
+    const showInterval = totalDays > 60 ? 7 : totalDays > 30 ? 3 : 1;
+    
+    for (let i = 0; i <= totalDays; i += showInterval) {
+        const currentDate = new Date(startNormalized);
+        currentDate.setDate(currentDate.getDate() + i);
+        currentDate.setHours(0, 0, 0, 0);
+        
+        if (currentDate > endNormalized) break;
+        
+        const left = (i / totalDays) * 100;
+        const width = dayWidth * showInterval;
+        const isToday = currentDate.getTime() === todayNormalized.getTime();
+        const dateStr = currentDate.toISOString().split('T')[0];
+        const dayOfMonth = currentDate.getDate();
+        const month = currentDate.toLocaleDateString('en-US', { month: 'short' });
+        
+        html += `
+            <div class="timeline-day-cell ${isToday ? 'today-cell' : ''}" 
+                 style="left: ${left}%; width: ${width}%;"
+                 onclick="highlightDateColumnByCell(this, ${i}, ${left}, ${width}, '${dateStr}')"
+                 data-date-index="${i}"
+                 data-date-left="${left}"
+                 data-date-width="${width}"
+                 data-context="${context}">
+                <div class="day-number">${dayOfMonth}</div>
+                <div class="day-month">${month}</div>
+                ${isToday ? '<div class="today-badge">Today</div>' : ''}
+            </div>
+        `;
+    }
+    
+    return html;
+}
+
+function renderZoneTimelineRow(zone, startDate, endDate, dayWidth, today) {
+    const startNormalized = new Date(startDate);
+    startNormalized.setHours(0, 0, 0, 0);
+    const endNormalized = new Date(endDate);
+    endNormalized.setHours(0, 0, 0, 0);
+    const totalDays = (endNormalized - startNormalized) / (1000 * 60 * 60 * 24);
+    
+    // Get all assignments and gaps
+    const assignments = zone.providerAssignments || [];
+    const gaps = calculateCoverageGaps(zone, totalDays);
+    const gapDays = gaps.reduce((sum, gap) => sum + gap.days, 0);
+    
+    // Build timeline segments
+    const segments = [];
+    
+    // Add coverage periods from assignments
+    assignments.forEach(assignment => {
+        const assignmentStart = new Date(assignment.startDate);
+        assignmentStart.setHours(0, 0, 0, 0);
+        const assignmentEnd = new Date(assignment.endDate);
+        assignmentEnd.setHours(0, 0, 0, 0);
+        
+        const displayStart = assignmentStart < startNormalized ? startNormalized : assignmentStart;
+        const displayEnd = assignmentEnd > endNormalized ? endNormalized : assignmentEnd;
+        
+        if (displayStart <= endNormalized && displayEnd >= startNormalized) {
+            segments.push({
+                start: displayStart,
+                end: displayEnd,
+                type: 'coverage'
+            });
+        }
+    });
+    
+    // Add gap periods
+    gaps.forEach(gap => {
+        const gapStart = new Date(gap.start);
+        gapStart.setHours(0, 0, 0, 0);
+        const gapEnd = new Date(gap.end);
+        gapEnd.setHours(0, 0, 0, 0);
+        
+        const displayStart = gapStart < startNormalized ? startNormalized : gapStart;
+        const displayEnd = gapEnd > endNormalized ? endNormalized : gapEnd;
+        
+        if (displayStart <= endNormalized && displayEnd >= startNormalized) {
+            segments.push({
+                start: displayStart,
+                end: displayEnd,
+                type: 'gap'
+            });
+        }
+    });
+    
+    // Sort all segments by start date
+    segments.sort((a, b) => a.start - b.start);
+    
+    // Build the bar HTML
+    let barHtml = '';
+    let currentPos = 0;
+    
+    // If no segments, show full gap
+    if (segments.length === 0) {
+        barHtml = `<div class="timeline-gap-bar" style="left: 0%; width: 100%;"></div>`;
+    } else {
+        segments.forEach(segment => {
+            const daysFromStart = (segment.start - startNormalized) / (1000 * 60 * 60 * 24);
+            const daysDuration = (segment.end - segment.start) / (1000 * 60 * 60 * 24);
+            
+            const left = (daysFromStart / totalDays) * 100;
+            const width = (daysDuration / totalDays) * 100;
+            
+            // Fill gap before this segment if needed
+            if (left > currentPos) {
+                const gapLeft = currentPos;
+                const gapWidth = left - currentPos;
+                const gapDays = Math.ceil(gapWidth * totalDays / 100);
+                barHtml += `<div class="timeline-gap-bar" 
+                    style="left: ${gapLeft}%; width: ${gapWidth}%;" 
+                    title="Gap: ${gapDays} day(s)"></div>`;
+            }
+            
+            if (segment.type === 'coverage') {
+                barHtml += `<div class="timeline-coverage-bar" 
+                    style="left: ${left}%; width: ${width}%;" 
+                    title="Coverage: ${formatDate(segment.start.toISOString().split('T')[0])} to ${formatDate(segment.end.toISOString().split('T')[0])}"></div>`;
+            } else {
+                const gapDays = Math.ceil((segment.end - segment.start) / (1000 * 60 * 60 * 24));
+                barHtml += `<div class="timeline-gap-bar" 
+                    style="left: ${left}%; width: ${width}%;" 
+                    title="Gap: ${formatDate(segment.start.toISOString().split('T')[0])} to ${formatDate(segment.end.toISOString().split('T')[0])} (${gapDays} days)"></div>`;
+            }
+            
+            currentPos = left + width;
+        });
+        
+        // Fill remaining gap at the end if needed
+        if (currentPos < 100) {
+            const gapLeft = currentPos;
+            const gapWidth = 100 - currentPos;
+            const gapDays = Math.ceil(gapWidth * totalDays / 100);
+            barHtml += `<div class="timeline-gap-bar" 
+                style="left: ${gapLeft}%; width: ${gapWidth}%;" 
+                title="Gap: ${gapDays} day(s)"></div>`;
+        }
+    }
+    
+    return `
+        <div class="zone-timeline-row" onclick="showZoneDetail(${zone.id}, 'timeline')">
+            <div class="zone-timeline-name">${zone.name}</div>
+            <div class="zone-timeline-gap-days">
+                ${gapDays > 0 ? 
+                    `<span class="gap-days-count">${gapDays} days</span>` : 
+                    '<span class="no-gap">0 days</span>'
+                }
+            </div>
+            <div class="zone-timeline-bar-container">
+                ${barHtml}
+            </div>
+        </div>
+    `;
+}
+
+function sortTimelineZones(column) {
+    if (currentSortColumn === `timeline-${column}`) {
+        // Toggle direction
+        currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSortColumn = `timeline-${column}`;
+        currentSortDirection = 'asc';
+    }
+    
+    // Update sort icons
+    document.querySelectorAll('.timeline-zones-header .sort-btn i').forEach(icon => {
+        icon.className = 'fas fa-sort';
+    });
+    
+    const sortIcon = document.getElementById(`sort-icon-timeline-${column}`);
+    if (sortIcon) {
+        sortIcon.className = currentSortDirection === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down';
+    }
+    
+    renderOverviewTimeline();
+}
+
+function handleOverviewGapClick(zoneIds) {
+    if (zoneIds.length === 1) {
+        showZoneDetail(zoneIds[0]);
+    } else {
+        // If multiple zones, show the first one
+        showZoneDetail(zoneIds[0]);
+    }
+}
+
+function updateOverviewTimeline() {
+    const range = document.getElementById('overview-timeline-range').value;
+    const customInputs = document.getElementById('overview-custom-range-inputs');
+    
+    if (range === 'custom') {
+        customInputs.style.display = 'flex';
+        return;
+    } else {
+        customInputs.style.display = 'none';
+    }
+    
+    renderOverviewTimeline();
+}
+
+function applyOverviewCustomRange() {
+    const startDate = document.getElementById('overview-custom-start-date').value;
+    const endDate = document.getElementById('overview-custom-end-date').value;
+    
+    if (!startDate || !endDate) {
+        alert('Please select both start and end dates');
+        return;
+    }
+    
+    if (new Date(endDate) < new Date(startDate)) {
+        alert('End date must be after start date');
+        return;
+    }
+    
+    renderOverviewTimeline();
+}
+
+function highlightDateColumnByCell(cellElement, dateIndex, left, width, dateStr) {
+    // Remove existing highlights
+    document.querySelectorAll('.date-column-highlight').forEach(el => {
+        if (el.id !== 'unified-date-column-highlight') {
+            el.remove();
+        }
+    });
+    
+    if (!cellElement) return;
+    
+    // Determine context (overview, unified, provider, or summary timeline)
+    const context = cellElement.getAttribute('data-context') || 'overview';
+    
+    let wrapper, dateHeaderDates, spacerWidth;
+    
+    if (context === 'unified') {
+        wrapper = document.getElementById('unified-timeline-scroll');
+        dateHeaderDates = document.getElementById('unified-date-header-dates');
+        spacerWidth = 330; // 180px provider name + 150px gap days
+    } else if (context === 'provider') {
+        wrapper = document.getElementById('provider-timeline-scroll');
+        dateHeaderDates = wrapper?.querySelector('.provider-date-header-dates');
+        spacerWidth = 330; // 180px provider name + 150px gap days
+    } else if (context === 'summary') {
+        wrapper = document.getElementById('zone-summary-timeline-scroll');
+        dateHeaderDates = wrapper?.querySelector('.summary-date-header-dates');
+        spacerWidth = 350; // 200px zone name + 150px gap days
+    } else {
+        wrapper = document.getElementById('overview-timeline-scroll');
+        dateHeaderDates = wrapper?.querySelector('.timeline-date-header-dates');
+        spacerWidth = 330; // 180px zone name + 150px gap days
+    }
+    
+    if (!wrapper || !dateHeaderDates) return;
+    
+    // Get the cell's position relative to the dates container
+    const cellRect = cellElement.getBoundingClientRect();
+    const datesRect = dateHeaderDates.getBoundingClientRect();
+    const relativeLeft = cellRect.left - datesRect.left;
+    const cellWidth = cellRect.width;
+    
+    let highlight;
+    if (context === 'unified') {
+        highlight = document.getElementById('unified-date-column-highlight');
+        if (!highlight) {
+            highlight = document.createElement('div');
+            highlight.id = 'unified-date-column-highlight';
+            wrapper.appendChild(highlight);
+        }
+    } else {
+        highlight = document.createElement('div');
+        wrapper.appendChild(highlight);
+    }
+    
+    highlight.className = 'date-column-highlight';
+    highlight.style.display = 'block';
+    
+    // Position relative to the scroll container, accounting for the spacer
+    highlight.style.left = `${spacerWidth + relativeLeft}px`;
+    highlight.style.width = `${cellWidth}px`;
+    highlight.setAttribute('data-date', dateStr);
+    
+    // Add click handler to remove highlight when clicking outside
+    setTimeout(() => {
+        const removeHighlight = (e) => {
+            if (!e.target.closest('.timeline-day-cell') && !e.target.closest('.date-column-highlight')) {
+                if (context === 'unified') {
+                    highlight.style.display = 'none';
+                } else {
+                    highlight.remove();
+                }
+                document.removeEventListener('click', removeHighlight);
+            }
+        };
+        document.addEventListener('click', removeHighlight);
+    }, 0);
+}
+
+function clearDateHighlight() {
+    const highlight = document.getElementById('unified-date-column-highlight');
+    if (highlight) {
+        highlight.style.display = 'none';
+    }
+    document.querySelectorAll('.date-column-highlight').forEach(el => {
+        if (el.id !== 'unified-date-column-highlight') {
+            el.remove();
+        }
+    });
 }
 
 // Utility functions

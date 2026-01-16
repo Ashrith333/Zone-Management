@@ -39,6 +39,15 @@
                     </button>
                 </div>
 
+                <div class="overview-tabs">
+                    <button class="overview-tab active" data-tab="table" onclick="showOverviewTab('table')">
+                        <i class="fas fa-table"></i> Zones Table
+                    </button>
+                    <button class="overview-tab" data-tab="timeline" onclick="showOverviewTab('timeline')">
+                        <i class="fas fa-calendar-alt"></i> Coverage Timeline
+                    </button>
+                </div>
+
                 <div class="dashboard-stats">
                     <div class="stat-card">
                         <div class="stat-icon blue">
@@ -78,29 +87,87 @@
                     </div>
                 </div>
 
-                <div class="dashboard-table-container">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Zone Name</th>
-                                <th>ZIP Codes</th>
-                                <th>Patients</th>
-                                <th>Providers</th>
-                                <th>Ratio</th>
-                                <th>Coverage Gaps</th>
-                                <th>Multi-Zone Patients</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="dashboard-table-body">
-                            <!-- Populated by JavaScript -->
-                            <tr>
-                                <td colspan="8" style="text-align: center; padding: 2rem; color: #64748b;">
-                                    <i class="fas fa-spinner fa-spin"></i> Loading zones...
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                <div id="overview-table-tab" class="overview-tab-content active">
+                    <div class="table-filters">
+                        <div class="search-box">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="zone-search-filter" placeholder="Search zones by name or ZIP code..." oninput="filterZones()">
+                        </div>
+                        <div class="filter-options">
+                            <label class="filter-checkbox">
+                                <input type="checkbox" id="show-gaps-only" onchange="filterZones()">
+                                <span>Show only zones with gaps</span>
+                            </label>
+                            <label class="filter-checkbox">
+                                <input type="number" id="gap-days-range" placeholder="Days range" value="60" min="1" max="365" onchange="filterZones()" style="width: 80px; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.25rem; margin-left: 0.5rem;">
+                                <span style="margin-left: 0.5rem;">days to check</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="dashboard-table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Zone Name</th>
+                                    <th>ZIP Codes</th>
+                                    <th>Patients</th>
+                                    <th>Providers</th>
+                                    <th>Ratio</th>
+                                    <th>Coverage Gaps</th>
+                                    <th class="sortable" onclick="sortTable('gapDays')">
+                                        Days Without Coverage
+                                        <i class="fas fa-sort" id="sort-icon-gapDays"></i>
+                                    </th>
+                                    <th>Multi-Zone Patients</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dashboard-table-body">
+                                <!-- Populated by JavaScript -->
+                                <tr>
+                                    <td colspan="9" style="text-align: center; padding: 2rem; color: #64748b;">
+                                        <i class="fas fa-spinner fa-spin"></i> Loading zones...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="overview-timeline-tab" class="overview-tab-content">
+                    <div class="overview-timeline-controls">
+                        <div class="timeline-controls-row">
+                            <div class="control-group">
+                                <label>View Range:</label>
+                                <select id="overview-timeline-range" onchange="updateOverviewTimeline()">
+                                    <option value="30">30 Days</option>
+                                    <option value="60" selected>60 Days (2 Months)</option>
+                                    <option value="90">90 Days</option>
+                                    <option value="custom">Custom Range</option>
+                                </select>
+                                <div id="overview-custom-range-inputs" class="custom-range-inputs" style="display: none;">
+                                    <input type="date" id="overview-custom-start-date">
+                                    <input type="date" id="overview-custom-end-date">
+                                    <button class="btn btn-primary" onclick="applyOverviewCustomRange()">Apply</button>
+                                </div>
+                            </div>
+                            <div class="control-group">
+                                <div class="search-box">
+                                    <i class="fas fa-search"></i>
+                                    <input type="text" id="timeline-zone-search" placeholder="Search zones..." oninput="updateOverviewTimeline()">
+                                </div>
+                            </div>
+                            <div class="control-group">
+                                <label class="filter-checkbox">
+                                    <input type="checkbox" id="timeline-show-gaps-only" onchange="updateOverviewTimeline()">
+                                    <span>Show only zones with gaps</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="overview-timeline-container" class="overview-timeline-container">
+                        <!-- Populated by JavaScript -->
+                    </div>
                 </div>
             </div>
 
@@ -150,17 +217,33 @@
                     <!-- Timeline Tab -->
                     <div id="timeline-tab" class="detail-tab-content">
                         <div class="timeline-controls">
-                            <label>View Range:</label>
-                            <select id="timeline-range" onchange="updateTimeline()">
-                                <option value="30">30 Days</option>
-                                <option value="60" selected>60 Days (2 Months)</option>
-                                <option value="90">90 Days</option>
-                                <option value="custom">Custom Range</option>
-                            </select>
-                            <div id="custom-range-inputs" class="custom-range-inputs" style="display: none;">
-                                <input type="date" id="custom-start-date">
-                                <input type="date" id="custom-end-date">
-                                <button class="btn btn-primary" onclick="applyCustomRange()">Apply</button>
+                            <div class="timeline-controls-row">
+                                <div class="control-group">
+                                    <label>View Range:</label>
+                                    <select id="timeline-range" onchange="updateTimeline()">
+                                        <option value="30">30 Days</option>
+                                        <option value="60" selected>60 Days (2 Months)</option>
+                                        <option value="90">90 Days</option>
+                                        <option value="custom">Custom Range</option>
+                                    </select>
+                                    <div id="custom-range-inputs" class="custom-range-inputs" style="display: none;">
+                                        <input type="date" id="custom-start-date">
+                                        <input type="date" id="custom-end-date">
+                                        <button class="btn btn-primary" onclick="applyCustomRange()">Apply</button>
+                                    </div>
+                                </div>
+                                <div class="control-group">
+                                    <div class="search-box">
+                                        <i class="fas fa-search"></i>
+                                        <input type="text" id="provider-timeline-search" placeholder="Search providers..." oninput="updateTimeline()">
+                                    </div>
+                                </div>
+                                <div class="control-group">
+                                    <label class="filter-checkbox">
+                                        <input type="checkbox" id="provider-show-gaps-only" onchange="updateTimeline()">
+                                        <span>Show only providers with gaps</span>
+                                    </label>
+                                </div>
                             </div>
                         </div>
                         <div id="timeline-container" class="timeline-container">

@@ -187,6 +187,40 @@ let zones = [
             }
         ],
         appointments: []
+    },
+    {
+        id: 5,
+        name: 'East Seattle',
+        zipCodes: ['98112', '98122', '98144'],
+        providerAssignments: [
+            {
+                id: 8,
+                providerId: 8,
+                providerName: 'Dr. Amanda White',
+                startDate: formatDateString(inOneWeek),
+                endDate: formatDateString(inOneMonth),
+                activeDays: ['monday', 'wednesday', 'friday'],
+                biWeekly: false
+            }
+        ],
+        appointments: []
+    },
+    {
+        id: 6,
+        name: 'Downtown Seattle',
+        zipCodes: ['98101', '98104', '98121'],
+        providerAssignments: [
+            {
+                id: 9,
+                providerId: 9,
+                providerName: 'Dr. Christopher Lee',
+                startDate: formatDateString(inTwoWeeks),
+                endDate: formatDateString(inOneMonth),
+                activeDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+                biWeekly: false
+            }
+        ],
+        appointments: []
     }
 ];
 
@@ -278,6 +312,92 @@ function getTotalCoverageGaps() {
         totalGaps += gaps.length;
     });
     return totalGaps;
+}
+
+// Aggregate gaps across all zones by date
+function getAggregateCoverageGaps(days = 60) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const endDate = new Date(today);
+    endDate.setDate(today.getDate() + days);
+    endDate.setHours(0, 0, 0, 0);
+    
+    // Get gaps for each zone
+    const zoneGaps = zones.map(zone => ({
+        zoneId: zone.id,
+        zoneName: zone.name,
+        gaps: calculateCoverageGaps(zone, days)
+    }));
+    
+    // Create a map of dates to zones with gaps
+    const dateGapMap = new Map();
+    
+    zoneGaps.forEach(zoneGap => {
+        zoneGap.gaps.forEach(gap => {
+            const gapStart = new Date(gap.start);
+            gapStart.setHours(0, 0, 0, 0);
+            const gapEnd = new Date(gap.end);
+            gapEnd.setHours(0, 0, 0, 0);
+            
+            // Add each day in the gap to the map
+            for (let d = new Date(gapStart); d <= gapEnd; d.setDate(d.getDate() + 1)) {
+                const dateKey = d.toISOString().split('T')[0];
+                if (!dateGapMap.has(dateKey)) {
+                    dateGapMap.set(dateKey, []);
+                }
+                dateGapMap.get(dateKey).push({
+                    zoneId: zoneGap.zoneId,
+                    zoneName: zoneGap.zoneName
+                });
+            }
+        });
+    });
+    
+    // Convert to array of date ranges with zones
+    const aggregatedGaps = [];
+    let currentGap = null;
+    
+    const sortedDates = Array.from(dateGapMap.keys()).sort();
+    
+    sortedDates.forEach(dateKey => {
+        const zones = dateGapMap.get(dateKey);
+        const date = new Date(dateKey);
+        date.setHours(0, 0, 0, 0);
+        
+        if (!currentGap) {
+            currentGap = {
+                start: new Date(date),
+                end: new Date(date),
+                zones: [...zones]
+            };
+        } else {
+            // Check if zones match and date is consecutive
+            const prevDate = new Date(currentGap.end);
+            prevDate.setDate(prevDate.getDate() + 1);
+            
+            const zonesMatch = JSON.stringify(currentGap.zones.map(z => z.zoneId).sort()) === 
+                              JSON.stringify(zones.map(z => z.zoneId).sort());
+            
+            if (zonesMatch && date.getTime() === prevDate.getTime()) {
+                // Extend current gap
+                currentGap.end = new Date(date);
+            } else {
+                // Save current gap and start new one
+                aggregatedGaps.push(currentGap);
+                currentGap = {
+                    start: new Date(date),
+                    end: new Date(date),
+                    zones: [...zones]
+                };
+            }
+        }
+    });
+    
+    if (currentGap) {
+        aggregatedGaps.push(currentGap);
+    }
+    
+    return aggregatedGaps;
 }
 
 // Export for use in app.js
